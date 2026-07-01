@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Loader2 } from 'lucide-react'
+import { Dices, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -25,6 +25,7 @@ import {
   NETWORKS,
   parseInbound,
   protocolDefaults,
+  randomRealityTarget,
   securitiesFor,
   SNIFF_OVERRIDES,
   SS_METHODS,
@@ -281,6 +282,18 @@ export function InboundFormDialog({
               )}
               {form.security === 'reality' && (
                 <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs text-muted-foreground">Steering target — randomized by default</p>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => patch(randomRealityTarget())}
+                    >
+                      <Dices className="h-4 w-4" />
+                      Random SNI
+                    </Button>
+                  </div>
                   <div className="grid grid-cols-2 gap-4">
                     <Field label="Dest (target)" htmlFor="ib-rdest">
                       <Input id="ib-rdest" value={form.realityDest} onChange={(e) => patch({ realityDest: e.target.value })} placeholder="www.yahoo.com:443" />

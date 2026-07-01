@@ -21,6 +21,27 @@ export const SS_METHODS = [
 export const VMESS_CIPHERS = ['auto', 'aes-128-gcm', 'chacha20-poly1305', 'none', 'zero']
 export const SNIFF_OVERRIDES = ['http', 'tls', 'quic', 'fakedns']
 
+// Pool of Reality steering domains (TLS 1.3 + HTTP/2). One is picked at random
+// as the default so a single flaky target (e.g. yahoo) isn't a single point of
+// failure — the user can also reroll in the form.
+export const SNI_POOL = [
+  'www.yahoo.com',
+  'www.amazon.com',
+  'www.apple.com',
+  'www.icloud.com',
+  'www.nvidia.com',
+  'www.samsung.com',
+  'www.tesla.com',
+  'www.bmw.com',
+  'www.spotify.com',
+  'www.cloudflare.com',
+]
+
+export function randomRealityTarget(): { realityDest: string; realityServerNames: string } {
+  const d = SNI_POOL[Math.floor(Math.random() * SNI_POOL.length)]
+  return { realityDest: `${d}:443`, realityServerNames: d }
+}
+
 // Which securities each protocol may use.
 export function securitiesFor(protocol: Protocol): Security[] {
   if (protocol === 'vless') return ['reality', 'tls', 'none']
@@ -120,8 +141,7 @@ export function protocolDefaults(protocol: Protocol): Partial<InboundForm> {
         network: 'tcp',
         security: 'reality',
         flow: 'xtls-rprx-vision',
-        realityDest: 'www.yahoo.com:443',
-        realityServerNames: 'www.yahoo.com',
+        ...randomRealityTarget(),
         fingerprint: 'chrome',
         realitySpiderX: '/',
       }
