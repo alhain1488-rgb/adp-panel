@@ -23,6 +23,16 @@ const (
 // script) and a noninteractive apt frontend.
 const installEnv = `export TERM=xterm DEBIAN_FRONTEND=noninteractive; `
 
+// CmdAptPrep readies apt before the vendor install scripts run: it waits out any
+// dpkg lock held by cloud-init/unattended-upgrades on a freshly booted node,
+// refreshes the package lists, and pre-installs the dependencies the installers
+// need (the Xray script installs `unzip` without an `apt update` first, which
+// fails on nodes with stale lists).
+const CmdAptPrep = installEnv +
+	`for i in $(seq 1 60); do fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1 && sleep 2 || break; done; ` +
+	`apt-get update -y || true; ` +
+	`apt-get install -y --no-install-recommends ca-certificates curl unzip openssl`
+
 // Commands (exported so tests can assert the sequence).
 const (
 	CmdOSRelease     = `. /etc/os-release 2>/dev/null; echo "${ID:-unknown}"`
@@ -69,6 +79,10 @@ func (p *Provisioner) Provision(ctx context.Context, r ssh.Runner, host, hyServi
 		return nil, fmt.Errorf("provision: unsupported OS %q (only Debian/Ubuntu are supported)", osID)
 	}
 
+	if err := p.aptPrep(ctx, r); err != nil {
+		return nil, err
+	}
+
 	xrayVer, err := p.ensureXray(ctx, r)
 	if err != nil {
 		return nil, err
@@ -104,6 +118,18 @@ func (p *Provisioner) detectOS(ctx context.Context, r ssh.Runner) (string, error
 	return strings.ToLower(strings.TrimSpace(res.Stdout)), nil
 }
 
+// aptPrep updates apt and pre-installs the installers' dependencies.
+func (p *Provisioner) aptPrep(ctx context.Context, r ssh.Runner) error {
+	res, err := r.Run(ctx, CmdAptPrep)
+	if err != nil {
+		return fmt.Errorf("provision: apt prep: %w", err)
+	}
+	if res.ExitCode != 0 {
+		return fmt.Errorf("provision: apt prep failed (exit %d): %s", res.ExitCode, tailOut(res))
+	}
+	return nil
+}
+
 func (p *Provisioner) ensureXray(ctx context.Context, r ssh.Runner) (string, error) {
 	if v := p.version(ctx, r, CmdXrayVersion); v != "" {
 		return v, nil
@@ -111,7 +137,7 @@ func (p *Provisioner) ensureXray(ctx context.Context, r ssh.Runner) (string, err
 	if res, err := r.Run(ctx, CmdInstallXray); err != nil {
 		return "", fmt.Errorf("provision: install xray: %w", err)
 	} else if res.ExitCode != 0 {
-		return "", fmt.Errorf("provision: install xray failed (exit %d): %s", res.ExitCode, tail(res.Stderr))
+		return "", fmt.Errorf("provision: install xray failed (exit %d): %s", res.ExitCode, tailOut(res))
 	}
 	v := p.version(ctx, r, CmdXrayVersion)
 	if v == "" {
@@ -127,7 +153,7 @@ func (p *Provisioner) ensureSingBox(ctx context.Context, r ssh.Runner) (string, 
 	if res, err := r.Run(ctx, CmdInstallSing); err != nil {
 		return "", fmt.Errorf("provision: install sing-box: %w", err)
 	} else if res.ExitCode != 0 {
-		return "", fmt.Errorf("provision: install sing-box failed (exit %d): %s", res.ExitCode, tail(res.Stderr))
+		return "", fmt.Errorf("provision: install sing-box failed (exit %d): %s", res.ExitCode, tailOut(res))
 	}
 	v := p.version(ctx, r, CmdSingVersion)
 	if v == "" {
@@ -177,4 +203,17 @@ func tail(s string) string {
 		return s[len(s)-300:]
 	}
 	return s
+}
+
+// tailOut combines a command's stderr and stdout (vendor install scripts often
+// report the real failure on stdout) and returns the tail for error messages.
+func tailOut(res ssh.Result) string {
+	parts := make([]string, 0, 2)
+	if e := strings.TrimSpace(res.Stderr); e != "" {
+		parts = append(parts, e)
+	}
+	if o := strings.TrimSpace(res.Stdout); o != "" {
+		parts = append(parts, o)
+	}
+	return tail(strings.Join(parts, " | "))
 }
