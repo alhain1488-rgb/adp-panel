@@ -5,6 +5,7 @@ import {
   Boxes,
   ChevronDown,
   Clock,
+  HardDriveDownload,
   Loader2,
   MoreVertical,
   Pencil,
@@ -13,6 +14,7 @@ import {
   RotateCw,
   Trash2,
 } from 'lucide-react'
+import { Badge } from '@/components/ui/badge'
 import { cn, formatRelativeTime } from '@/lib/utils'
 import { EmptyState, StatCard, UsageBar } from '@/components/common/misc'
 import { EngineBadge, ProtocolBadge, StatusBadge } from '@/components/common/badges'
@@ -43,12 +45,34 @@ import {
   useCheckServer,
   useDeleteInbound,
   useDeleteServer,
+  useInstallServer,
   useRestartEngine,
   useServerInbounds,
   useServerStats,
   useUpdateInbound,
 } from '@/api/hooks'
 import type { Inbound, Server } from '@/api/types'
+
+// Provisioning (engine install) indicator — SPEC §5.1.
+function ProvisionIndicator({ status }: { status: NonNullable<Server['provision_status']> }) {
+  if (status === 'installing' || status === 'pending') {
+    return (
+      <Badge variant="warning" className="gap-1.5">
+        <Loader2 className="h-3 w-3 animate-spin" />
+        Installing engines
+      </Badge>
+    )
+  }
+  if (status === 'failed') {
+    return (
+      <Badge variant="destructive" className="gap-1.5">
+        <AlertTriangle className="h-3 w-3" />
+        Install failed
+      </Badge>
+    )
+  }
+  return null
+}
 
 function formatUptime(seconds?: number): string {
   if (seconds == null || seconds <= 0) return '—'
@@ -69,6 +93,16 @@ export function ServerCard({ server }: { server: Server }) {
   const checkServer = useCheckServer()
   const restartEngine = useRestartEngine(server.id)
   const deleteServer = useDeleteServer()
+  const installServer = useInstallServer()
+
+  async function handleInstall() {
+    try {
+      await installServer.mutateAsync(server.id)
+      toast({ title: 'Installing engines', description: server.name })
+    } catch (err) {
+      toast({ variant: 'destructive', title: 'Install failed', description: errMsg(err) })
+    }
+  }
 
   async function handleCheck() {
     try {
@@ -108,9 +142,12 @@ export function ServerCard({ server }: { server: Server }) {
         aria-expanded={expanded}
       >
         <div className="min-w-0">
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <span className="truncate font-semibold">{server.name}</span>
             <StatusBadge status={server.status} />
+            {server.provision_status && server.provision_status !== 'installed' && (
+              <ProvisionIndicator status={server.provision_status} />
+            )}
           </div>
           <p className="mt-0.5 truncate text-xs text-muted-foreground">
             {server.geo_country ? `${server.geo_country} · ` : ''}
@@ -144,8 +181,10 @@ export function ServerCard({ server }: { server: Server }) {
           onDelete={() => setDeleteOpen(true)}
           onCheck={handleCheck}
           onRestart={handleRestart}
+          onReinstall={handleInstall}
           checking={checkServer.isPending}
           restarting={restartEngine.isPending}
+          installing={installServer.isPending}
         />
       )}
 
@@ -184,16 +223,20 @@ function ServerCardDetail({
   onDelete,
   onCheck,
   onRestart,
+  onReinstall,
   checking,
   restarting,
+  installing,
 }: {
   server: Server
   onEdit: () => void
   onDelete: () => void
   onCheck: () => void
   onRestart: (engine?: string) => void
+  onReinstall: () => void
   checking: boolean
   restarting: boolean
+  installing: boolean
 }) {
   const id = server.id
   const { data: stats } = useServerStats(id)
@@ -275,6 +318,10 @@ function ServerCardDetail({
           <Pencil className="h-4 w-4" />
           Edit
         </Button>
+        <Button variant="outline" size="sm" onClick={onReinstall} disabled={installing}>
+          {installing ? <Loader2 className="h-4 w-4 animate-spin" /> : <HardDriveDownload className="h-4 w-4" />}
+          Reinstall engines
+        </Button>
         <Button
           variant="ghost"
           size="sm"
@@ -294,6 +341,31 @@ function ServerCardDetail({
               {d}
             </span>
           ))}
+        </div>
+      )}
+
+      {server.provision_status && server.provision_status !== 'installed' && (
+        <div className="flex items-start gap-3 rounded-md border border-warning/40 bg-warning/5 p-3">
+          {server.provision_status === 'failed' ? (
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
+          ) : (
+            <Loader2 className="mt-0.5 h-4 w-4 shrink-0 animate-spin text-warning" />
+          )}
+          <div>
+            <p className="text-sm font-medium">
+              {server.provision_status === 'failed'
+                ? 'Engine installation failed'
+                : 'Installing engines (xray + sing-box)…'}
+            </p>
+            {server.provision_error && (
+              <p className="mt-1 break-words text-xs text-muted-foreground">{server.provision_error}</p>
+            )}
+            {server.provision_status !== 'failed' && (
+              <p className="mt-1 text-xs text-muted-foreground">
+                Inbounds are not pushed to this node until installation completes.
+              </p>
+            )}
+          </div>
         </div>
       )}
 

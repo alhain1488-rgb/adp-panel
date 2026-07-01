@@ -471,6 +471,50 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/servers/{id}/install": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["IdPath"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * (Re)install engines on the node (provisioning, SPEC §5.1)
+         * @description Installs xray-core and the Hysteria2 engine (sing-box) on the node over SSH and generates a self-signed TLS cert for Hysteria2. Runs automatically on server creation; this endpoint re-runs it. Debian/Ubuntu only. Requires root/sudo SSH and outbound internet on the node.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: components["parameters"]["IdPath"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Provisioning started/completed; server row reflects status */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Server"];
+                    };
+                };
+                404: components["responses"]["NotFound"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/servers/{id}/stats": {
         parameters: {
             query?: never;
@@ -1442,6 +1486,11 @@ export interface components {
         };
         /** @enum {string} */
         ServerStatus: "online" | "offline" | "unknown" | "error";
+        /**
+         * @description Engine installation (provisioning) state of the node, SPEC §5.1.
+         * @enum {string}
+         */
+        ProvisionStatus: "pending" | "installing" | "installed" | "failed";
         EngineStatus: {
             engine: components["schemas"]["Engine"];
             running: boolean;
@@ -1464,6 +1513,8 @@ export interface components {
             geo_city?: string;
             geo_asn?: string;
             status: components["schemas"]["ServerStatus"];
+            provision_status?: components["schemas"]["ProvisionStatus"];
+            provision_error?: string | null;
             engines?: components["schemas"]["EngineStatus"][];
             inbound_count?: number;
             /** Format: date-time */

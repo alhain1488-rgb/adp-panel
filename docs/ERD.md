@@ -36,6 +36,8 @@ erDiagram
         string geo_city
         string geo_asn
         string status
+        string provision_status
+        string provision_error
         datetime last_check_at
         datetime last_sync_at
         string last_sync_error
@@ -104,3 +106,6 @@ erDiagram
   а не отдельной колонкой.
 - `settings` — key-value: домен/базовый URL подписки, интервал синхронизации, выбранный
   движок Hysteria2 и т.п.
+- `servers.provision_status` (`pending`/`installing`/`installed`/`failed`) и `provision_error` —
+  состояние автоустановки движков на ноду (SPEC §5.1). Server-level поля, добавлены аддитивной
+  миграцией; sync не пушит на сервер, пока не `installed`.

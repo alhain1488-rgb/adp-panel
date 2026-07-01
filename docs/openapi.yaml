@@ -236,6 +236,27 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
 
+  /api/servers/{id}/install:
+    parameters:
+      - $ref: '#/components/parameters/IdPath'
+    post:
+      tags: [Servers]
+      summary: (Re)install engines on the node (provisioning, SPEC §5.1)
+      description: >
+        Installs xray-core and the Hysteria2 engine (sing-box) on the node over
+        SSH and generates a self-signed TLS cert for Hysteria2. Runs
+        automatically on server creation; this endpoint re-runs it. Debian/Ubuntu
+        only. Requires root/sudo SSH and outbound internet on the node.
+      responses:
+        '200':
+          description: Provisioning started/completed; server row reflects status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Server'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
   /api/servers/{id}/stats:
     parameters:
       - $ref: '#/components/parameters/IdPath'
@@ -825,6 +846,11 @@ components:
       type: string
       enum: [online, offline, unknown, error]
 
+    ProvisionStatus:
+      type: string
+      enum: [pending, installing, installed, failed]
+      description: Engine installation (provisioning) state of the node, SPEC §5.1.
+
     EngineStatus:
       type: object
       required: [engine, running]
@@ -870,6 +896,11 @@ components:
           type: string
         status:
           $ref: '#/components/schemas/ServerStatus'
+        provision_status:
+          $ref: '#/components/schemas/ProvisionStatus'
+        provision_error:
+          type: string
+          nullable: true
         engines:
           type: array
           items:

@@ -7,6 +7,7 @@
 export type Protocol = 'vless' | 'vmess' | 'trojan' | 'shadowsocks' | 'hysteria2';
 export type Engine = 'xray' | 'hysteria';
 export type ServerStatus = 'online' | 'offline' | 'unknown' | 'error';
+export type ProvisionStatus = 'pending' | 'installing' | 'installed' | 'failed';
 export type SshAuthMethod = 'password' | 'key';
 export type Theme = 'light' | 'dark' | 'system';
 export type HysteriaEngine = 'sing-box' | 'hysteria';
@@ -32,6 +33,8 @@ export interface Server {
   geo_city?: string;
   geo_asn?: string;
   status: ServerStatus;
+  provision_status?: ProvisionStatus;
+  provision_error?: string | null;
   engines: EngineStatus[];
   inbound_count: number;
   last_check_at: string | null;
@@ -247,6 +250,12 @@ export const servers: Server[] = [
     updated_at: minsAgo(11),
   },
 ];
+
+// Existing seeded nodes are already provisioned (engines installed).
+servers.forEach((s) => {
+  s.provision_status = 'installed';
+  s.provision_error = null;
+});
 
 // ---------------------------------------------------------------- Inbounds
 

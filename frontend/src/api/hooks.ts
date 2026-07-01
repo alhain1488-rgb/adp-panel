@@ -46,7 +46,18 @@ export function useDashboard() {
 
 // ---- Servers ----
 export function useServers() {
-  return useQuery({ queryKey: qk.servers, queryFn: () => api.get<Server[]>('/api/servers') })
+  return useQuery({
+    queryKey: qk.servers,
+    queryFn: () => api.get<Server[]>('/api/servers'),
+    // Poll while any node is still provisioning so installing → installed shows up.
+    refetchInterval: (query) => {
+      const data = query.state.data as Server[] | undefined
+      const busy = data?.some(
+        (s) => s.provision_status === 'installing' || s.provision_status === 'pending',
+      )
+      return busy ? 2500 : false
+    },
+  })
 }
 export function useServer(id: number) {
   return useQuery({ queryKey: qk.server(id), queryFn: () => api.get<Server>(`/api/servers/${id}`), enabled: id > 0 })
@@ -93,6 +104,17 @@ export function useCheckServer() {
     },
   })
 }
+export function useInstallServer() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id: number) => api.post<Server>(`/api/servers/${id}/install`),
+    onSuccess: (s) => {
+      qc.invalidateQueries({ queryKey: qk.servers })
+      qc.invalidateQueries({ queryKey: qk.server(s.id) })
+    },
+  })
+}
+
 export function useRestartEngine(id: number) {
   const qc = useQueryClient()
   return useMutation({

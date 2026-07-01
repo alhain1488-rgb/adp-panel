@@ -55,6 +55,24 @@ function subUrl(token: string): string {
   return `${settings.subscription_base_url}/sub/${token}`
 }
 
+// Simulate the provisioning module (SPEC §5.1): mark the node "installing", then
+// after a short delay flip to "installed" and expose the freshly installed engines.
+function scheduleProvision(srv: Server, delayMs = 3000) {
+  srv.provision_status = 'installing'
+  srv.provision_error = null
+  setTimeout(() => {
+    srv.provision_status = 'installed'
+    srv.provision_error = null
+    if (!srv.engines || srv.engines.length === 0) {
+      srv.engines = [
+        { engine: 'xray', running: true, version: '1.8.24', service_name: 'xray' },
+        { engine: 'hysteria', running: true, version: 'sing-box 1.10.0', service_name: 'sing-box' },
+      ]
+    }
+    srv.updated_at = new Date().toISOString()
+  }, delayMs)
+}
+
 async function qrPng(text: string): Promise<Uint8Array> {
   const dataUrl = await QRCode.toDataURL(text, { margin: 1, width: 320 })
   const base64 = dataUrl.split(',')[1]
@@ -137,6 +155,8 @@ export const handlers = [
       geo_city: undefined,
       geo_asn: undefined,
       status: 'unknown',
+      provision_status: 'installing',
+      provision_error: null,
       engines: [],
       inbound_count: 0,
       last_check_at: null,
@@ -146,6 +166,7 @@ export const handlers = [
       updated_at: now,
     }
     servers.push(srv)
+    scheduleProvision(srv)
     return json(srv, { status: 201 })
   }),
   http.get('/api/servers/:id', ({ request, params }) => {
@@ -194,6 +215,13 @@ export const handlers = [
       srv.geo_country = srv.geo_country ?? 'Unknown'
     }
     srv.updated_at = now
+    return json(srv)
+  }),
+  http.post('/api/servers/:id/install', ({ request, params }) => {
+    if (!requireAuth(request)) return unauthorized()
+    const srv = servers.find((s) => s.id === Number(params.id))
+    if (!srv) return notFound()
+    scheduleProvision(srv)
     return json(srv)
   }),
   http.post('/api/servers/:id/restart-xray', async ({ request, params }) => {
