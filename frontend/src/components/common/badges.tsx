@@ -5,10 +5,10 @@ import type { Protocol, ServerStatus } from '@/api/types'
 
 export function StatusBadge({ status }: { status: ServerStatus }) {
   const map: Record<ServerStatus, { label: string; variant: 'success' | 'destructive' | 'secondary' | 'warning'; dot: string }> = {
-    online: { label: 'Online', variant: 'success', dot: 'bg-success' },
-    offline: { label: 'Offline', variant: 'secondary', dot: 'bg-muted-foreground' },
-    error: { label: 'Error', variant: 'destructive', dot: 'bg-destructive' },
-    unknown: { label: 'Unknown', variant: 'warning', dot: 'bg-warning' },
+    online: { label: 'Online', variant: 'success', dot: 'bg-white/90' },
+    offline: { label: 'Offline', variant: 'secondary', dot: 'bg-foreground/70' },
+    error: { label: 'Error', variant: 'destructive', dot: 'bg-white/90' },
+    unknown: { label: 'Unknown', variant: 'warning', dot: 'bg-black/70' },
   }
   const s = map[status] ?? map.unknown
   return (
@@ -43,7 +43,7 @@ export function ProtocolBadge({ protocol }: { protocol: Protocol }) {
 export function EngineBadge({ engine, running }: { engine: string; running: boolean }) {
   return (
     <Badge variant={running ? 'success' : 'secondary'} className="gap-1.5 font-mono text-[11px]">
-      <span className={cn('h-1.5 w-1.5 rounded-full', running ? 'bg-success' : 'bg-muted-foreground')} />
+      <span className={cn('h-1.5 w-1.5 rounded-full', running ? 'bg-white/90' : 'bg-foreground/70')} />
       {engine === 'hysteria' ? 'hysteria2' : engine}
     </Badge>
   )
