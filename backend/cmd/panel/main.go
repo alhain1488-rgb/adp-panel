@@ -26,7 +26,7 @@ import (
 )
 
 // version is the backend build version; kept in sync with the frontend APP_VERSION.
-const version = "0.8.0.1"
+const version = "0.8.0.2"
 
 func main() {
 	logger := logging.New()

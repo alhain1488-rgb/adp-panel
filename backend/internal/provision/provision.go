@@ -17,13 +17,19 @@ const (
 	DefaultKeyPath  = "/etc/sing-box/self.key"
 )
 
+// installEnv gives the vendor install scripts a usable environment over a
+// PTY-less SSH session: a TERM value (their colored output calls `tput`, which
+// otherwise fails with "No value for $TERM and no -T specified" and can abort the
+// script) and a noninteractive apt frontend.
+const installEnv = `export TERM=xterm DEBIAN_FRONTEND=noninteractive; `
+
 // Commands (exported so tests can assert the sequence).
 const (
 	CmdOSRelease     = `. /etc/os-release 2>/dev/null; echo "${ID:-unknown}"`
 	CmdXrayVersion   = `xray version 2>/dev/null | head -n1 || true`
-	CmdInstallXray   = `bash -c "$(curl -fsSL https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install`
+	CmdInstallXray   = installEnv + `bash -c "$(curl -fsSL https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install`
 	CmdSingVersion   = `sing-box version 2>/dev/null | head -n1 || true`
-	CmdInstallSing   = `bash -c "$(curl -fsSL https://sing-box.app/deb-install.sh)"`
+	CmdInstallSing   = installEnv + `bash -c "$(curl -fsSL https://sing-box.app/deb-install.sh)"`
 	CmdEnsureCertDir = `mkdir -p /etc/sing-box`
 )
 
