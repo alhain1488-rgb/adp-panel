@@ -24,6 +24,34 @@ and their subscriptions. No billing, traffic limits, or multi-tenancy — by des
 - Managed nodes must be **Debian/Ubuntu** with root/sudo SSH and outbound internet
   (the panel auto-installs xray-core + sing-box on server add).
 
+## Install on a VPS (one command)
+
+On a fresh **Debian/Ubuntu** server, `install.sh` does everything: installs Docker,
+adds swap on small boxes, generates secrets, picks a TLS site address, builds the
+images, and starts the stack. Re-running it updates in place and keeps your secrets.
+
+```bash
+# as root, from a checkout of this repo:
+git clone https://github.com/alhain1488-rgb/adp-panel.git /opt/adp-panel
+cd /opt/adp-panel && sudo bash install.sh
+```
+
+- **No domain?** Leave it — the panel is served on `<your-ip>.sslip.io` with a
+  **trusted Let's Encrypt cert** (no domain purchase needed).
+- **Have a domain** pointing at the server? Pass it for a cert on your own name:
+
+  ```bash
+  sudo PANEL_DOMAIN=vpn.example.com bash install.sh
+  ```
+
+The installer prints the URL and admin credentials at the end (also saved in
+`/opt/adp-panel/.env`). Options: `PANEL_ADMIN_USERNAME`, `PANEL_ADMIN_PASSWORD`,
+`INSTALL_DIR`, `REPO_URL`/`REPO_BRANCH`, and `GITHUB_TOKEN` (to clone a private repo).
+
+> If the repository is **public**, you can skip the clone and pipe it straight in:
+> `curl -fsSL <raw-url>/install.sh | sudo -E bash`. For a private repo, clone first
+> (as above) or provide `GITHUB_TOKEN`.
+
 ## Quick start (local, full stack)
 
 1. Create `.env` from the example and fill in the secrets:
