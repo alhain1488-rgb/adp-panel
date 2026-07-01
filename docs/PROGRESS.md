@@ -9,8 +9,6 @@
 > `frontend/src/version.ts` (бампать всегда; сейчас 0.7.0.0, backend `main.go` зеркалит).
 > Docker поднят через **Colima** (`colima start` после ребута). Локальный `.env` уже есть (gitignore).
 > Коммиты — только локальные, **push не делаем до Фазы 9**.
-> **Долг:** интеграционный тест sync против нод (`go test -tags=integration -run Integration
-> ./internal/sync/ -v`) написан, но ещё не прогонялся вживую — нужен поднятый Colima.
 
 ---
 
@@ -197,7 +195,8 @@ inbound с видимыми дефолтами и live-превью (в духе
   креденшелами клиента), **httpapi e2e**: клиент → гранты на оба движка → `/sub/{token}` = 2 URI
   (`vless://` + `hysteria2://`); disable → пусто; rotate → старый токен 404; `/sync` → рестарт xray.
 - Frontend: `npm run build` ✓, `npm run lint` ✓ (0 ошибок), `npm run test` ✓.
-- **Интеграция sync (Docker, build-тег `integration`, ждёт живого прогона на Colima):**
+- **Интеграция sync (Docker, build-тег `integration`) — прогнано вживую ✓:**
   `internal/sync/validate_integration_test.go` берёт **байты из `plan()`** (ровно то, что пушит
-  sync) и валидирует их реальными `xray -test` / `sing-box check`.
+  sync) и валидирует их реальными движками: **`xray -test`** → «Configuration OK» (Xray 26.3.27),
+  **`sing-box check`** принял Hysteria2-конфиг (с self-signed сертом). Оба теста PASS.
   Запуск: `go test -tags=integration -run Integration ./internal/sync/ -v`.
