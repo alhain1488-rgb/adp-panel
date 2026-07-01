@@ -1,14 +1,15 @@
 import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom'
-import { Users, Settings as SettingsIcon, ScrollText, LogOut, ShieldCheck } from 'lucide-react'
+import { Server, Users, Settings as SettingsIcon, ScrollText, LogOut, ShieldCheck } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { ThemeToggle } from './theme-toggle'
 import { useAuth } from '@/auth/auth-context'
 
 const bottomNav = [
-  { to: '/clients', label: 'Clients', icon: Users },
-  { to: '/logs', label: 'Logs', icon: ScrollText },
-  { to: '/settings', label: 'Settings', icon: SettingsIcon },
+  { to: '/', label: 'Servers', icon: Server, end: true },
+  { to: '/clients', label: 'Clients', icon: Users, end: false },
+  { to: '/logs', label: 'Logs', icon: ScrollText, end: false },
+  { to: '/settings', label: 'Settings', icon: SettingsIcon, end: false },
 ]
 
 export function AppLayout() {
@@ -46,6 +47,7 @@ export function AppLayout() {
           <NavLink
             key={item.to}
             to={item.to}
+            end={item.end}
             aria-label={item.label}
             title={item.label}
             className={({ isActive }) =>
