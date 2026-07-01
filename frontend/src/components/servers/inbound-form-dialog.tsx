@@ -283,10 +283,10 @@ export function InboundFormDialog({
                 <div className="space-y-4">
                   <div className="grid grid-cols-2 gap-4">
                     <Field label="Dest (target)" htmlFor="ib-rdest">
-                      <Input id="ib-rdest" value={form.realityDest} onChange={(e) => patch({ realityDest: e.target.value })} placeholder="www.microsoft.com:443" />
+                      <Input id="ib-rdest" value={form.realityDest} onChange={(e) => patch({ realityDest: e.target.value })} placeholder="www.yahoo.com:443" />
                     </Field>
                     <Field label="Server names (SNI)" htmlFor="ib-rsni" hint="Comma separated">
-                      <Input id="ib-rsni" value={form.realityServerNames} onChange={(e) => patch({ realityServerNames: e.target.value })} placeholder="www.microsoft.com" />
+                      <Input id="ib-rsni" value={form.realityServerNames} onChange={(e) => patch({ realityServerNames: e.target.value })} placeholder="www.yahoo.com" />
                     </Field>
                     <Field label="Fingerprint" htmlFor="ib-rfp">
                       <select id="ib-rfp" className={selectClass} value={form.fingerprint} onChange={(e) => patch({ fingerprint: e.target.value })}>

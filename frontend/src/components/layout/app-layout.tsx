@@ -1,8 +1,9 @@
 import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom'
-import { Server, Users, Settings as SettingsIcon, ScrollText, LogOut, ShieldCheck } from 'lucide-react'
+import { Server, Users, Settings as SettingsIcon, ScrollText, LogOut } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { ThemeToggle } from './theme-toggle'
+import { DisgustingLogo } from './logo'
 import { useAuth } from '@/auth/auth-context'
 
 const bottomNav = [
@@ -26,7 +27,7 @@ export function AppLayout() {
       {/* Top bar: title left, theme + sign out (icons only) right */}
       <header className="flex h-16 items-center justify-between px-4 sm:px-6">
         <Link to="/" className="flex items-center gap-2">
-          <ShieldCheck className="h-6 w-6 text-primary" />
+          <DisgustingLogo className="h-8 w-8" />
           <span className="text-lg font-semibold tracking-tight">Absolutely Disgusting Panel</span>
         </Link>
         <div className="flex items-center gap-1">

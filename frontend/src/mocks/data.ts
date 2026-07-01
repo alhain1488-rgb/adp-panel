@@ -282,9 +282,9 @@ export const inbounds: Inbound[] = [
       security: 'reality',
       realitySettings: {
         show: false,
-        dest: 'www.microsoft.com:443',
+        dest: 'www.yahoo.com:443',
         xver: 0,
-        serverNames: ['www.microsoft.com', 'www.bing.com'],
+        serverNames: ['www.yahoo.com', 'www.wikipedia.org'],
         privateKey: 'yBb0m5s8Qk3fZ2rN7wJvC1xD9uH4eLpTaG6oM8kXyE',
         publicKey: 'wYf2Kp9Lx7Rq4Zm1Nc8Vd3Bh6Jt0Ss5Aw2Ee9Uu4Oi',
         shortIds: ['6ba85179e30d4fc2', '0a1b2c3d'],
