@@ -1,0 +1,25 @@
+# Caddy serves the built frontend and reverse-proxies the API to the backend.
+# Local (`docker compose up`): PANEL_SITE_ADDRESS defaults to `localhost`, so
+# Caddy issues an internal-CA cert (browser shows a warning — expected locally).
+# On the VPS: set PANEL_SITE_ADDRESS to the real domain and Caddy auto-provisions
+# a Let's Encrypt certificate. Optionally set an ACME contact email via the
+# `tls {$ACME_EMAIL}` line below (kept out of the global block so an empty value
+# doesn't break the config locally).
+{$PANEL_SITE_ADDRESS:localhost} {
+	encode gzip
+
+	# Everything the backend owns (API, public subscription, docs, health) must be
+	# proxied before the SPA fallback rewrites the path — use handle blocks so the
+	# match is exclusive and try_files can't intercept it.
+	@backend path /api/* /sub/* /swagger /openapi.yaml /healthz /readyz
+	handle @backend {
+		reverse_proxy backend:8080
+	}
+
+	# Single-page app: serve static assets, fall back to index.html for routes.
+	handle {
+		root * /srv
+		try_files {path} /index.html
+		file_server
+	}
+}

@@ -33,7 +33,9 @@ type Deps struct {
 	Sync         *syncpkg.Service
 	Logger       *slog.Logger
 	Version      string
+	Domain       string
 	SubBaseURL   string
+	Theme        string
 }
 
 // Router builds the chi router with middleware and routes mounted.
@@ -47,6 +49,10 @@ func Router(d Deps) http.Handler {
 	health := &healthHandler{db: d.DB, version: d.Version}
 	r.Get("/healthz", health.healthz)
 	r.Get("/readyz", health.readyz)
+
+	// API docs (public, dev convenience).
+	r.Get("/swagger", health.swaggerUI)
+	r.Get("/openapi.yaml", health.openapiYAML)
 
 	ah := &authHandler{svc: d.Auth, store: d.Store}
 
@@ -83,6 +89,10 @@ func Router(d Deps) http.Handler {
 		r.Use(d.Auth.RequireAuth)
 
 		r.Get("/api/logs", ah.listLogs)
+
+		seth := &settingsHandler{store: d.Store, domain: d.Domain, subBaseURL: d.SubBaseURL, defaultTheme: d.Theme}
+		r.Get("/api/settings", seth.get)
+		r.Put("/api/settings", seth.update)
 
 		ih := &inboundsHandler{svc: d.Inbounds, servers: d.Servers, store: d.Store}
 

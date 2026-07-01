@@ -26,7 +26,7 @@ import (
 )
 
 // version is the backend build version; kept in sync with the frontend APP_VERSION.
-const version = "0.7.0.0"
+const version = "0.8.0.0"
 
 func main() {
 	logger := logging.New()
@@ -79,6 +79,7 @@ func main() {
 		Sync:         syncSvc,
 		Logger:       logger,
 		Version:      version,
+		Domain:       cfg.Domain,
 		SubBaseURL:   cfg.SubBaseURL,
 	})
 	srv := httpapi.NewServer(cfg.HTTPAddr, handler)

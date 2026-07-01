@@ -3,12 +3,14 @@
 Короткие записи по завершении каждой фазы: что сделано, что проверено. Ведёт Claude Code.
 
 > **СОСТОЯНИЕ (для возобновления после сжатия контекста / в новой сессии):**
-> Готовы **Фазы 0–6**. **Следующая — Фаза 7** (локальная сборка целиком: фронт на реальном API,
-> Caddy, Swagger, README, smoke). Чтобы продолжить: прочитать этот файл + `git log --oneline`,
+> Готовы **Фазы 0–7**. **Следующая — Фаза 8 (ДЕПЛОЙ на VPS человека) — точка ревью человеком.**
+> Фаза 8 требует у человека: **IP/хост VPS, SSH login/pass, домен** (запросить в момент деплоя,
+> не хардкодить, не коммитить). Чтобы продолжить: прочитать этот файл + `git log --oneline`,
 > затем идти по `docs/ROADMAP.md`. Инварианты и правила — в `CLAUDE.md`. Правило версий —
-> `frontend/src/version.ts` (бампать всегда; сейчас 0.7.0.0, backend `main.go` зеркалит).
+> `frontend/src/version.ts` (бампать всегда; сейчас 0.8.0.0, backend `main.go` зеркалит).
 > Docker поднят через **Colima** (`colima start` после ребута). Локальный `.env` уже есть (gitignore).
-> Коммиты — только локальные, **push не делаем до Фазы 9**.
+> Полный стек локально: `docker compose up --build` → https://localhost (Swagger `/swagger`).
+> Smoke: `./scripts/smoke.sh`. Коммиты — только локальные, **push не делаем до Фазы 9**.
 
 ---
 
@@ -200,3 +202,31 @@ inbound с видимыми дефолтами и live-превью (в духе
   sync) и валидирует их реальными движками: **`xray -test`** → «Configuration OK» (Xray 26.3.27),
   **`sing-box check`** принял Hysteria2-конфиг (с self-signed сертом). Оба теста PASS.
   Запуск: `go test -tags=integration -run Integration ./internal/sync/ -v`.
+
+## Фаза 7 — Локальная сборка целиком (фронт на реальном API) ✅
+
+**Сделано:**
+- **Фронт → реальный API.** Клиент (`src/api/client.ts`) ходит по относительным `/api|/sub` с
+  Bearer-токеном; моки (MSW) управляются `VITE_USE_MOCKS` (dev — по умолчанию вкл; продакшн-образ
+  собирается с `VITE_USE_MOCKS=false`). Сверил карту вызовов фронта с backend — единственная дыра
+  (`/api/settings`) закрыта; `useDashboard` не вызывается (Dashboard убран), 2FA-эндпоинты на месте.
+- **Backend: `/api/settings`** (GET/PUT) — поверх KV-таблицы `settings` + дефолты из конфига
+  (domain, subscription_base_url, sync_interval_seconds, theme; `hysteria_engine` read-only).
+- **Backend: Swagger** — `/swagger` (Swagger UI из CDN) + `/openapi.yaml` (встроенная копия
+  канона через `go:embed`; синхронизация `make sync-openapi`).
+- **Caddy + web-образ** (`deploy/Caddyfile`, `deploy/web.Dockerfile`): собирает фронт без моков,
+  отдаёт статику, reverse-proxy `@backend` (`/api|/sub|/swagger|/openapi.yaml|/healthz|/readyz`)
+  через `handle`-блоки (до SPA-fallback), TLS: локально internal-CA, на VPS — авто Let's Encrypt.
+  `docker-compose.yml` расширен сервисом `web` (80/443) + volume-ы Caddy. `.dockerignore`.
+- **README.md** (назначение, требования, локальный старт, env, добавление протокола, движок
+  Hysteria2, troubleshooting), **`scripts/smoke.sh`** (SPEC §12), **Makefile**.
+
+**Проверено (вживую на поднятом стеке):**
+- `go test ./...` ✓ (+ тесты `/api/settings` и Swagger), `go vet` ✓, `gofmt` ✓;
+  фронт `build`/`lint`/`test` ✓.
+- `docker compose up --build` поднял **backend (healthy) + web (Caddy)**. По HTTPS через Caddy:
+  `/healthz` → `{"status":"ok","version":"0.8.0.0"}`; `/swagger` → Swagger UI; `/openapi.yaml` →
+  спецификация; `/` и `/clients` → SPA (реальный API, не моки); `/sub/{token}` → base64-подписка.
+- **`./scripts/smoke.sh` — PASS:** health → логин → сервер → inbound-ы (VLESS + Hysteria2) →
+  клиент → гранты → `/sub/{token}` вернул 2 URI (`vless://` + `hysteria2://`).
+- Версия панели → **0.8.0.0** (backend `main.go` зеркалит фронт).

@@ -1,5 +1,7 @@
-# Phase 2: backend + persistent SQLite volume. The frontend and Caddy (TLS
-# reverse proxy) are added in Phase 7 — see docs/ROADMAP.md.
+# Full local stack (Phase 7): Go backend + SQLite volume, and Caddy serving the
+# built frontend over HTTPS while reverse-proxying the API to the backend.
+#   docker compose up --build
+# Then open https://localhost (accept the local-CA warning). Swagger: /swagger.
 services:
   backend:
     build: ./backend
@@ -10,6 +12,7 @@ services:
     volumes:
       - panel-data:/data
     ports:
+      # Direct backend access for smoke/debug; the primary path is via Caddy.
       - "8080:8080"
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:8080/healthz"]
@@ -19,5 +22,26 @@ services:
       start_period: 5s
     restart: unless-stopped
 
+  web:
+    build:
+      context: .
+      dockerfile: deploy/web.Dockerfile
+    environment:
+      # Local default = localhost (internal-CA TLS). On the VPS set this to the
+      # real domain and Caddy auto-provisions a Let's Encrypt certificate.
+      PANEL_SITE_ADDRESS: ${PANEL_SITE_ADDRESS:-localhost}
+    ports:
+      - "80:80"
+      - "443:443"
+    depends_on:
+      backend:
+        condition: service_healthy
+    volumes:
+      - caddy-data:/data
+      - caddy-config:/config
+    restart: unless-stopped
+
 volumes:
   panel-data:
+  caddy-data:
+  caddy-config:

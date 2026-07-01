@@ -1,0 +1,1337 @@
+openapi: 3.0.3
+info:
+  title: Xray Panel API
+  version: 0.1.0
+  description: >
+    Personal multi-VPS Xray management panel. Design-first contract shared by the
+    real Go backend and the Phase-1 mock frontend (MSW). No billing, traffic
+    accounting, tenancy or referrals — single admin, personal use.
+servers:
+  - url: /
+    description: Same-origin (Caddy proxies /api and /sub to the backend)
+
+tags:
+  - name: Auth
+  - name: Servers
+  - name: Inbounds
+  - name: Clients
+  - name: Subscription
+  - name: Dashboard
+  - name: Logs
+  - name: Settings
+  - name: Health
+
+security:
+  - bearerAuth: []
+
+paths:
+  # ------------------------------------------------------------------ Auth
+  /api/auth/login:
+    post:
+      tags: [Auth]
+      summary: Login with username/password
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Authenticated, or 2FA required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /api/auth/2fa/verify:
+    post:
+      tags: [Auth]
+      summary: Complete login by verifying a TOTP code
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TotpCodeRequest'
+      responses:
+        '200':
+          description: Authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthTokens'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/auth/2fa/setup:
+    post:
+      tags: [Auth]
+      summary: Begin TOTP enrollment (returns otpauth URL + QR)
+      responses:
+        '200':
+          description: Enrollment payload
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TotpSetup'
+
+  /api/auth/2fa/enable:
+    post:
+      tags: [Auth]
+      summary: Enable TOTP after verifying the first code
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TotpCodeRequest'
+      responses:
+        '204':
+          description: TOTP enabled
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/auth/logout:
+    post:
+      tags: [Auth]
+      summary: Invalidate the current session
+      responses:
+        '204':
+          description: Logged out
+
+  /api/auth/me:
+    get:
+      tags: [Auth]
+      summary: Current admin identity
+      responses:
+        '200':
+          description: Admin profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Admin'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  # --------------------------------------------------------------- Servers
+  /api/servers:
+    get:
+      tags: [Servers]
+      summary: List servers
+      responses:
+        '200':
+          description: Servers
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Server'
+    post:
+      tags: [Servers]
+      summary: Create a server
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ServerInput'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Server'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/servers/{id}:
+    parameters:
+      - $ref: '#/components/parameters/IdPath'
+    get:
+      tags: [Servers]
+      summary: Get a server
+      responses:
+        '200':
+          description: Server
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Server'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      tags: [Servers]
+      summary: Update a server
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ServerInput'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Server'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [Servers]
+      summary: Delete a server
+      responses:
+        '204':
+          description: Deleted
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/servers/{id}/check:
+    parameters:
+      - $ref: '#/components/parameters/IdPath'
+    post:
+      tags: [Servers]
+      summary: Check reachability, refresh ip/geo and engine status
+      responses:
+        '200':
+          description: Check result (server row refreshed)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Server'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/servers/{id}/restart-xray:
+    parameters:
+      - $ref: '#/components/parameters/IdPath'
+    post:
+      tags: [Servers]
+      summary: Restart an engine on the server (Xray and/or Hysteria2)
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                engine:
+                  $ref: '#/components/schemas/Engine'
+      responses:
+        '200':
+          description: Restart result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResult'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/servers/{id}/install:
+    parameters:
+      - $ref: '#/components/parameters/IdPath'
+    post:
+      tags: [Servers]
+      summary: (Re)install engines on the node (provisioning, SPEC §5.1)
+      description: >
+        Installs xray-core and the Hysteria2 engine (sing-box) on the node over
+        SSH and generates a self-signed TLS cert for Hysteria2. Runs
+        automatically on server creation; this endpoint re-runs it. Debian/Ubuntu
+        only. Requires root/sudo SSH and outbound internet on the node.
+      responses:
+        '200':
+          description: Provisioning started/completed; server row reflects status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Server'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/servers/{id}/sync:
+    parameters:
+      - $ref: '#/components/parameters/IdPath'
+    post:
+      tags: [Servers]
+      summary: Assemble and push each engine's config to the node
+      description: >
+        Builds every engine's config (Xray config.json and, for Hysteria2
+        inbounds, the sing-box config) from the server's enabled inbounds and
+        their granted clients, then pushes over SSH: backup, write, validate
+        (xray -test / sing-box check), and restart the service. Idempotent by
+        config hash. Refuses to push until the node is provisioned.
+      responses:
+        '200':
+          description: Sync result (per-engine outcome)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SyncResult'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/servers/{id}/stats:
+    parameters:
+      - $ref: '#/components/parameters/IdPath'
+    get:
+      tags: [Servers]
+      summary: CPU/RAM/disk metrics via SSH
+      responses:
+        '200':
+          description: Metrics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServerStats'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # -------------------------------------------------------------- Inbounds
+  /api/servers/{id}/inbounds:
+    parameters:
+      - $ref: '#/components/parameters/IdPath'
+    get:
+      tags: [Inbounds]
+      summary: List inbounds of a server
+      responses:
+        '200':
+          description: Inbounds
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Inbound'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    post:
+      tags: [Inbounds]
+      summary: Create an inbound on a server
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InboundInput'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Inbound'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/inbounds/{id}:
+    parameters:
+      - $ref: '#/components/parameters/IdPath'
+    get:
+      tags: [Inbounds]
+      summary: Get an inbound
+      responses:
+        '200':
+          description: Inbound
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Inbound'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      tags: [Inbounds]
+      summary: Update an inbound (triggers config regeneration/sync)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InboundInput'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Inbound'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [Inbounds]
+      summary: Delete an inbound
+      responses:
+        '204':
+          description: Deleted
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # --------------------------------------------------------------- Clients
+  /api/clients:
+    get:
+      tags: [Clients]
+      summary: List clients
+      responses:
+        '200':
+          description: Clients
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Client'
+    post:
+      tags: [Clients]
+      summary: Create a client (generates uuid, password, subscription token)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ClientInput'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Client'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/clients/{id}:
+    parameters:
+      - $ref: '#/components/parameters/IdPath'
+    get:
+      tags: [Clients]
+      summary: Get a client
+      responses:
+        '200':
+          description: Client
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Client'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      tags: [Clients]
+      summary: Update a client (rename, remark)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ClientInput'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Client'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [Clients]
+      summary: Delete a client
+      responses:
+        '204':
+          description: Deleted
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/clients/{id}/enable:
+    parameters:
+      - $ref: '#/components/parameters/IdPath'
+    post:
+      tags: [Clients]
+      summary: Enable a client
+      responses:
+        '200':
+          description: Client
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Client'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/clients/{id}/disable:
+    parameters:
+      - $ref: '#/components/parameters/IdPath'
+    post:
+      tags: [Clients]
+      summary: Disable a client without deleting
+      responses:
+        '200':
+          description: Client
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Client'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/clients/{id}/inbounds:
+    parameters:
+      - $ref: '#/components/parameters/IdPath'
+    put:
+      tags: [Clients]
+      summary: Grant/revoke access to inbounds (full desired set)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ClientInboundsInput'
+      responses:
+        '200':
+          description: Updated client with grants
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Client'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/clients/{id}/rotate-token:
+    parameters:
+      - $ref: '#/components/parameters/IdPath'
+    post:
+      tags: [Clients]
+      summary: Rotate the subscription token ("refresh configuration")
+      responses:
+        '200':
+          description: Client with new token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Client'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/clients/{id}/links:
+    parameters:
+      - $ref: '#/components/parameters/IdPath'
+    get:
+      tags: [Clients]
+      summary: Ready-to-use connection URIs (including hysteria2://)
+      responses:
+        '200':
+          description: Links
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ClientLink'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/clients/{id}/qrcode:
+    parameters:
+      - $ref: '#/components/parameters/IdPath'
+      - name: link
+        in: query
+        required: false
+        description: Which link to encode; defaults to the subscription URL.
+        schema:
+          type: string
+    get:
+      tags: [Clients]
+      summary: QR code (PNG) for a link or the subscription URL
+      responses:
+        '200':
+          description: PNG image
+          content:
+            image/png:
+              schema:
+                type: string
+                format: binary
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/clients/{id}/config:
+    parameters:
+      - $ref: '#/components/parameters/IdPath'
+    get:
+      tags: [Clients]
+      summary: Download a client config file
+      responses:
+        '200':
+          description: Config file
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ---------------------------------------------------------- Subscription
+  /sub/{token}:
+    parameters:
+      - name: token
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      tags: [Subscription]
+      summary: Public base64 subscription for all allowed+enabled inbounds
+      security: []
+      responses:
+        '200':
+          description: Base64-encoded newline-separated URI list
+          content:
+            text/plain:
+              schema:
+                type: string
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  # ------------------------------------------------------------- Dashboard
+  /api/dashboard/summary:
+    get:
+      tags: [Dashboard]
+      summary: Aggregate counters and per-server health for the dashboard
+      responses:
+        '200':
+          description: Summary
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DashboardSummary'
+
+  # ------------------------------------------------------------------ Logs
+  /api/logs:
+    get:
+      tags: [Logs]
+      summary: Audit log (admin actions)
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+      responses:
+        '200':
+          description: Paginated audit entries
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditLogPage'
+
+  # -------------------------------------------------------------- Settings
+  /api/settings:
+    get:
+      tags: [Settings]
+      summary: Read panel settings
+      responses:
+        '200':
+          description: Settings
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Settings'
+    put:
+      tags: [Settings]
+      summary: Update panel settings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Settings'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Settings'
+
+  # -------------------------------------------------------------- Health
+  /healthz:
+    get:
+      tags: [Health]
+      summary: Liveness
+      security: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Health'
+  /readyz:
+    get:
+      tags: [Health]
+      summary: Readiness (DB reachable, migrations applied)
+      security: []
+      responses:
+        '200':
+          description: Ready
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Health'
+        '503':
+          description: Not ready
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Health'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    IdPath:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: integer
+        format: int64
+
+  responses:
+    BadRequest:
+      description: Invalid input
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Unauthorized:
+      description: Authentication required or failed
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    RateLimited:
+      description: Too many requests
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+        code:
+          type: string
+        details:
+          type: object
+          additionalProperties: true
+
+    Engine:
+      type: string
+      enum: [xray, hysteria]
+      description: Target engine an inbound belongs to.
+
+    Protocol:
+      type: string
+      enum: [vless, vmess, trojan, shadowsocks, hysteria2]
+
+    OperationResult:
+      type: object
+      required: [ok]
+      properties:
+        ok:
+          type: boolean
+        message:
+          type: string
+        engine:
+          $ref: '#/components/schemas/Engine'
+
+    Health:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [ok, degraded, down]
+        version:
+          type: string
+
+    # ---- Auth ----
+    LoginRequest:
+      type: object
+      required: [username, password]
+      properties:
+        username:
+          type: string
+        password:
+          type: string
+          format: password
+
+    LoginResponse:
+      type: object
+      required: [need_2fa]
+      properties:
+        need_2fa:
+          type: boolean
+        tokens:
+          $ref: '#/components/schemas/AuthTokens'
+        challenge_id:
+          type: string
+          description: Present when need_2fa is true; passed to /2fa/verify.
+
+    AuthTokens:
+      type: object
+      required: [token]
+      properties:
+        token:
+          type: string
+        refresh_token:
+          type: string
+        expires_at:
+          type: string
+          format: date-time
+
+    TotpCodeRequest:
+      type: object
+      required: [code]
+      properties:
+        code:
+          type: string
+        challenge_id:
+          type: string
+
+    TotpSetup:
+      type: object
+      required: [otpauth_url, qr]
+      properties:
+        otpauth_url:
+          type: string
+        qr:
+          type: string
+          description: Data URL (image/png;base64) of the enrollment QR.
+        secret:
+          type: string
+
+    Admin:
+      type: object
+      required: [id, username, totp_enabled]
+      properties:
+        id:
+          type: integer
+          format: int64
+        username:
+          type: string
+        totp_enabled:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    # ---- Servers ----
+    ServerStatus:
+      type: string
+      enum: [online, offline, unknown, error]
+
+    ProvisionStatus:
+      type: string
+      enum: [pending, installing, installed, failed]
+      description: Engine installation (provisioning) state of the node, SPEC §5.1.
+
+    EngineStatus:
+      type: object
+      required: [engine, running]
+      properties:
+        engine:
+          $ref: '#/components/schemas/Engine'
+        running:
+          type: boolean
+        version:
+          type: string
+        service_name:
+          type: string
+
+    Server:
+      type: object
+      required: [id, name, host, ssh_port, ssh_user, ssh_auth_method, status]
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+        host:
+          type: string
+        ssh_port:
+          type: integer
+        ssh_user:
+          type: string
+        ssh_auth_method:
+          type: string
+          enum: [password, key]
+        xray_config_path:
+          type: string
+        xray_service_name:
+          type: string
+        hysteria_config_path:
+          type: string
+        hysteria_service_name:
+          type: string
+        ip:
+          type: string
+        geo_country:
+          type: string
+        geo_city:
+          type: string
+        geo_asn:
+          type: string
+        status:
+          $ref: '#/components/schemas/ServerStatus'
+        provision_status:
+          $ref: '#/components/schemas/ProvisionStatus'
+        provision_error:
+          type: string
+          nullable: true
+        engines:
+          type: array
+          items:
+            $ref: '#/components/schemas/EngineStatus'
+        inbound_count:
+          type: integer
+        last_check_at:
+          type: string
+          format: date-time
+          nullable: true
+        last_sync_at:
+          type: string
+          format: date-time
+          nullable: true
+        last_sync_error:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    ServerInput:
+      type: object
+      required: [name, host, ssh_port, ssh_user, ssh_auth_method]
+      properties:
+        name:
+          type: string
+        host:
+          type: string
+        ssh_port:
+          type: integer
+          default: 22
+        ssh_user:
+          type: string
+        ssh_auth_method:
+          type: string
+          enum: [password, key]
+        ssh_secret:
+          type: string
+          format: password
+          description: SSH password or private key (write-only; encrypted at rest).
+        ssh_passphrase:
+          type: string
+          format: password
+          description: Passphrase for the private key (write-only).
+        xray_config_path:
+          type: string
+          default: /usr/local/etc/xray/config.json
+        xray_service_name:
+          type: string
+          default: xray
+        hysteria_config_path:
+          type: string
+          default: /etc/sing-box/config.json
+        hysteria_service_name:
+          type: string
+          default: sing-box
+
+    ServerStats:
+      type: object
+      required:
+        - cpu_percent
+        - mem_percent
+        - mem_used_mb
+        - mem_total_mb
+        - disk_percent
+        - disk_used_gb
+        - disk_total_gb
+        - uptime_seconds
+        - collected_at
+      properties:
+        cpu_percent:
+          type: number
+          format: float
+        mem_percent:
+          type: number
+          format: float
+        mem_used_mb:
+          type: number
+          format: float
+        mem_total_mb:
+          type: number
+          format: float
+        disk_percent:
+          type: number
+          format: float
+        disk_used_gb:
+          type: number
+          format: float
+        disk_total_gb:
+          type: number
+          format: float
+        uptime_seconds:
+          type: integer
+          format: int64
+        collected_at:
+          type: string
+          format: date-time
+
+    # ---- Inbounds ----
+    Inbound:
+      type: object
+      required: [id, server_id, tag, protocol, port, enabled]
+      properties:
+        id:
+          type: integer
+          format: int64
+        server_id:
+          type: integer
+          format: int64
+        tag:
+          type: string
+        protocol:
+          $ref: '#/components/schemas/Protocol'
+        engine:
+          $ref: '#/components/schemas/Engine'
+        listen:
+          type: string
+        port:
+          type: integer
+        settings:
+          type: object
+          additionalProperties: true
+          description: Protocol-specific settings (settings_json).
+        stream_settings:
+          type: object
+          additionalProperties: true
+          description: Transport/security settings (stream_settings_json).
+        sniffing:
+          type: object
+          additionalProperties: true
+        remark:
+          type: string
+        enabled:
+          type: boolean
+        client_count:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    InboundInput:
+      type: object
+      required: [tag, protocol, port]
+      properties:
+        tag:
+          type: string
+        protocol:
+          $ref: '#/components/schemas/Protocol'
+        listen:
+          type: string
+          default: 0.0.0.0
+        port:
+          type: integer
+        settings:
+          type: object
+          additionalProperties: true
+        stream_settings:
+          type: object
+          additionalProperties: true
+        sniffing:
+          type: object
+          additionalProperties: true
+        remark:
+          type: string
+        enabled:
+          type: boolean
+          default: true
+
+    # ---- Clients ----
+    Client:
+      type: object
+      required: [id, name, uuid, subscription_token, enabled]
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+        uuid:
+          type: string
+        password:
+          type: string
+        subscription_token:
+          type: string
+        subscription_url:
+          type: string
+        enabled:
+          type: boolean
+        remark:
+          type: string
+        inbound_ids:
+          type: array
+          items:
+            type: integer
+            format: int64
+        grants:
+          type: array
+          items:
+            $ref: '#/components/schemas/ClientGrant'
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    ClientGrant:
+      type: object
+      required: [inbound_id, enabled]
+      properties:
+        inbound_id:
+          type: integer
+          format: int64
+        server_id:
+          type: integer
+          format: int64
+        server_name:
+          type: string
+        inbound_tag:
+          type: string
+        protocol:
+          $ref: '#/components/schemas/Protocol'
+        enabled:
+          type: boolean
+
+    ClientInput:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+        remark:
+          type: string
+
+    ClientInboundsInput:
+      type: object
+      required: [inbound_ids]
+      properties:
+        inbound_ids:
+          type: array
+          items:
+            type: integer
+            format: int64
+          description: Full desired set of granted inbound ids.
+
+    SyncResult:
+      type: object
+      required: [ok]
+      properties:
+        ok:
+          type: boolean
+        message:
+          type: string
+          description: Error detail when ok is false.
+        engines:
+          type: array
+          items:
+            type: object
+            required: [engine, changed, skipped]
+            properties:
+              engine:
+                $ref: '#/components/schemas/Engine'
+              changed:
+                type: boolean
+                description: Config differed and was pushed + service restarted.
+              skipped:
+                type: boolean
+                description: Config unchanged (idempotent no-op).
+              inbounds:
+                type: integer
+              clients:
+                type: integer
+
+    ClientLink:
+      type: object
+      required: [inbound_id, protocol, uri]
+      properties:
+        inbound_id:
+          type: integer
+          format: int64
+        server_name:
+          type: string
+        protocol:
+          $ref: '#/components/schemas/Protocol'
+        remark:
+          type: string
+        uri:
+          type: string
+
+    # ---- Dashboard ----
+    DashboardSummary:
+      type: object
+      required: [client_count, server_count, servers]
+      properties:
+        client_count:
+          type: integer
+        enabled_client_count:
+          type: integer
+        server_count:
+          type: integer
+        online_server_count:
+          type: integer
+        inbound_count:
+          type: integer
+        last_sync_at:
+          type: string
+          format: date-time
+          nullable: true
+        servers:
+          type: array
+          items:
+            $ref: '#/components/schemas/DashboardServer'
+
+    DashboardServer:
+      type: object
+      required: [id, name, status, stats, engines]
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+        host:
+          type: string
+        status:
+          $ref: '#/components/schemas/ServerStatus'
+        geo_country:
+          type: string
+        stats:
+          $ref: '#/components/schemas/ServerStats'
+        engines:
+          type: array
+          items:
+            $ref: '#/components/schemas/EngineStatus'
+        last_sync_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    # ---- Logs ----
+    AuditLog:
+      type: object
+      required: [id, action, created_at]
+      properties:
+        id:
+          type: integer
+          format: int64
+        admin_id:
+          type: integer
+          format: int64
+        admin_username:
+          type: string
+        action:
+          type: string
+        target_type:
+          type: string
+        target_id:
+          type: integer
+          format: int64
+        detail:
+          type: object
+          additionalProperties: true
+        ip:
+          type: string
+        user_agent:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+
+    AuditLogPage:
+      type: object
+      required: [items, total, page, page_size]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/AuditLog'
+        total:
+          type: integer
+        page:
+          type: integer
+        page_size:
+          type: integer
+
+    # ---- Settings ----
+    Settings:
+      type: object
+      properties:
+        domain:
+          type: string
+        subscription_base_url:
+          type: string
+        sync_interval_seconds:
+          type: integer
+        hysteria_engine:
+          type: string
+          enum: [sing-box, hysteria]
+        theme:
+          type: string
+          enum: [light, dark, system]

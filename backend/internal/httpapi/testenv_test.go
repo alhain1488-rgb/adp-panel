@@ -96,6 +96,7 @@ func newTestEnv(t *testing.T) *testEnv {
 		Sync:         syncSvc,
 		Logger:       logging.New(),
 		Version:      "test",
+		Domain:       "panel.test",
 		SubBaseURL:   "http://panel.test",
 	})
 	return &testEnv{
