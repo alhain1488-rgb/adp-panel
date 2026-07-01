@@ -1,12 +1,13 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ShieldCheck, KeyRound, Loader2 } from 'lucide-react'
+import { KeyRound, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { useAuth } from '@/auth/auth-context'
 import { ThemeToggle } from '@/components/layout/theme-toggle'
+import { DisgustingLogo } from '@/components/layout/logo'
 import { RequestError } from '@/api/client'
 
 export default function LoginPage() {
@@ -61,11 +62,17 @@ export default function LoginPage() {
       </div>
       <Card className="w-full max-w-sm shadow-lg">
         <CardHeader className="space-y-2 text-center">
-          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10 text-primary">
-            {step === 'credentials' ? <ShieldCheck className="h-6 w-6" /> : <KeyRound className="h-6 w-6" />}
+          <div className="mx-auto flex h-12 w-12 items-center justify-center">
+            {step === 'credentials' ? (
+              <DisgustingLogo className="h-12 w-12" />
+            ) : (
+              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                <KeyRound className="h-6 w-6" />
+              </div>
+            )}
           </div>
           <CardTitle className="text-xl">
-            {step === 'credentials' ? 'Xray Panel' : 'Two-factor authentication'}
+            {step === 'credentials' ? 'Absolutely Disgusting Panel' : 'Two-factor authentication'}
           </CardTitle>
           <CardDescription>
             {step === 'credentials'
@@ -102,9 +109,6 @@ export default function LoginPage() {
                 {loading && <Loader2 className="h-4 w-4 animate-spin" />}
                 Sign in
               </Button>
-              <p className="text-center text-xs text-muted-foreground">
-                Demo: any username/password. Use code <span className="font-mono">123456</span> for 2FA.
-              </p>
             </form>
           ) : (
             <form onSubmit={handleTotp} className="space-y-4">

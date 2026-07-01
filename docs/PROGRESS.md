@@ -7,7 +7,7 @@
 > Фаза 8 требует у человека: **IP/хост VPS, SSH login/pass, домен** (запросить в момент деплоя,
 > не хардкодить, не коммитить). Чтобы продолжить: прочитать этот файл + `git log --oneline`,
 > затем идти по `docs/ROADMAP.md`. Инварианты и правила — в `CLAUDE.md`. Правило версий —
-> `frontend/src/version.ts` (бампать всегда; сейчас 0.8.0.0, backend `main.go` зеркалит).
+> `frontend/src/version.ts` (бампать всегда; сейчас 0.8.0.1, backend `main.go` зеркалит).
 > Docker поднят через **Colima** (`colima start` после ребута). Локальный `.env` уже есть (gitignore).
 > Полный стек локально: `docker compose up --build` → https://localhost (Swagger `/swagger`).
 > Smoke: `./scripts/smoke.sh`. Коммиты — только локальные, **push не делаем до Фазы 9**.
@@ -229,4 +229,8 @@ inbound с видимыми дефолтами и live-превью (в духе
   спецификация; `/` и `/clients` → SPA (реальный API, не моки); `/sub/{token}` → base64-подписка.
 - **`./scripts/smoke.sh` — PASS:** health → логин → сервер → inbound-ы (VLESS + Hysteria2) →
   клиент → гранты → `/sub/{token}` вернул 2 URI (`vless://` + `hysteria2://`).
-- Версия панели → **0.8.0.0** (backend `main.go` зеркалит фронт).
+- **Визуальная проверка** (Vite-превью против реального API): страница входа и вкладка
+  дображены под бренд — лого **ЧЕРЕМША** + «Absolutely Disgusting Panel» (было «Xray Panel» +
+  щит), убрана демо-подсказка; `index.html` title/favicon обновлены. Вход реальным админом →
+  страница серверов с живыми данными из БД (сервер smoke-node с 2 inbound-ами). Консоль чистая
+  (Login-тест зелёный). Версия панели → **0.8.0.1** (backend `main.go` зеркалит фронт).
