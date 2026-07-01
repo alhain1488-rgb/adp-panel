@@ -145,6 +145,24 @@ func (s *Service) target(srv *store.Server) (ssh.Target, error) {
 	}, nil
 }
 
+// Connect opens an SSH runner to a server, decrypting its secrets. The caller
+// must Close the returned runner. Used by the sync engine.
+func (s *Service) Connect(ctx context.Context, id int64) (ssh.Runner, *store.Server, error) {
+	srv, err := s.store.GetServer(ctx, id)
+	if err != nil {
+		return nil, nil, err
+	}
+	target, err := s.target(srv)
+	if err != nil {
+		return nil, nil, err
+	}
+	runner, err := s.dialer.Dial(ctx, target)
+	if err != nil {
+		return nil, nil, fmt.Errorf("servers: connect: %w", err)
+	}
+	return runner, srv, nil
+}
+
 // Provision installs engines on the node (auto after create, or via /install).
 func (s *Service) Provision(ctx context.Context, id int64) (*store.Server, error) {
 	srv, err := s.store.GetServer(ctx, id)

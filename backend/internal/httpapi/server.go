@@ -13,20 +13,27 @@ import (
 	"github.com/go-chi/httprate"
 
 	"github.com/adp/panel/internal/auth"
+	"github.com/adp/panel/internal/clients"
 	"github.com/adp/panel/internal/inbounds"
 	"github.com/adp/panel/internal/servers"
 	"github.com/adp/panel/internal/store"
+	"github.com/adp/panel/internal/subscription"
+	syncpkg "github.com/adp/panel/internal/sync"
 )
 
 // Deps are the dependencies the HTTP layer needs.
 type Deps struct {
-	DB       *sql.DB
-	Store    *store.Store
-	Auth     *auth.Service
-	Servers  *servers.Service
-	Inbounds *inbounds.Service
-	Logger   *slog.Logger
-	Version  string
+	DB           *sql.DB
+	Store        *store.Store
+	Auth         *auth.Service
+	Servers      *servers.Service
+	Inbounds     *inbounds.Service
+	Clients      *clients.Service
+	Subscription *subscription.Service
+	Sync         *syncpkg.Service
+	Logger       *slog.Logger
+	Version      string
+	SubBaseURL   string
 }
 
 // Router builds the chi router with middleware and routes mounted.
@@ -60,7 +67,16 @@ func Router(d Deps) http.Handler {
 		})
 	})
 
-	sh := &serversHandler{svc: d.Servers, store: d.Store}
+	sh := &serversHandler{svc: d.Servers, sync: d.Sync, store: d.Store}
+
+	// Public subscription endpoint (token-addressed, rate-limited).
+	if d.Subscription != nil {
+		subH := &subscriptionHandler{svc: d.Subscription}
+		r.Group(func(r chi.Router) {
+			r.Use(httprate.LimitByIP(60, time.Minute))
+			r.Get("/sub/{token}", subH.get)
+		})
+	}
 
 	// Protected API.
 	r.Group(func(r chi.Router) {
@@ -80,6 +96,7 @@ func Router(d Deps) http.Handler {
 				r.Post("/check", sh.check)
 				r.Post("/install", sh.install)
 				r.Post("/restart-xray", sh.restart)
+				r.Post("/sync", sh.syncNode)
 				r.Get("/stats", sh.stats)
 				r.Get("/inbounds", ih.listByServer)
 				r.Post("/inbounds", ih.create)
@@ -90,6 +107,24 @@ func Router(d Deps) http.Handler {
 			r.Get("/", ih.get)
 			r.Put("/", ih.update)
 			r.Delete("/", ih.del)
+		})
+
+		ch := &clientsHandler{svc: d.Clients, store: d.Store, subBase: d.SubBaseURL}
+		r.Route("/api/clients", func(r chi.Router) {
+			r.Get("/", ch.list)
+			r.Post("/", ch.create)
+			r.Route("/{id}", func(r chi.Router) {
+				r.Get("/", ch.get)
+				r.Put("/", ch.update)
+				r.Delete("/", ch.del)
+				r.Post("/enable", ch.enable)
+				r.Post("/disable", ch.disable)
+				r.Put("/inbounds", ch.setInbounds)
+				r.Post("/rotate-token", ch.rotateToken)
+				r.Get("/links", ch.links)
+				r.Get("/qrcode", ch.qrcode)
+				r.Get("/config", ch.config)
+			})
 		})
 	})
 

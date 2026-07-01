@@ -3,11 +3,14 @@
 Короткие записи по завершении каждой фазы: что сделано, что проверено. Ведёт Claude Code.
 
 > **СОСТОЯНИЕ (для возобновления после сжатия контекста / в новой сессии):**
-> Готовы **Фазы 0–5**. **Следующая — Фаза 6** (клиенты, доступы, подписка, мультидвижковый sync).
-> Чтобы продолжить: прочитать этот файл + `git log --oneline`, затем идти по `docs/ROADMAP.md`.
-> Инварианты и правила — в `CLAUDE.md`. Правило версий — `frontend/src/version.ts` (бампать всегда).
+> Готовы **Фазы 0–6**. **Следующая — Фаза 7** (локальная сборка целиком: фронт на реальном API,
+> Caddy, Swagger, README, smoke). Чтобы продолжить: прочитать этот файл + `git log --oneline`,
+> затем идти по `docs/ROADMAP.md`. Инварианты и правила — в `CLAUDE.md`. Правило версий —
+> `frontend/src/version.ts` (бампать всегда; сейчас 0.7.0.0, backend `main.go` зеркалит).
 > Docker поднят через **Colima** (`colima start` после ребута). Локальный `.env` уже есть (gitignore).
 > Коммиты — только локальные, **push не делаем до Фазы 9**.
+> **Долг:** интеграционный тест sync против нод (`go test -tags=integration -run Integration
+> ./internal/sync/ -v`) написан, но ещё не прогонялся вживую — нужен поднятый Colima.
 
 ---
 
@@ -160,3 +163,41 @@ inbound с видимыми дефолтами и live-превью (в духе
   собранный реестром, принят реальным **`xray -test`** (Xray 26.3.27 → «Configuration OK»);
   конфиг **Hysteria2** принят **`sing-box check`** (с реальным self-signed сертом).
   Запуск: `go test -tags=integration -run Integration ./internal/protocols/`.
+
+## Фаза 6 — Клиенты, доступы, подписка и мультидвижковый sync ✅
+
+**Сделано:**
+- `store` — `clients.go` (CRUD клиентов, enable/disable, rotate-token, гранты через
+  `client_inbounds`: `SetClientInbounds`/`GrantedInboundIDs`/`ListClientGrants`;
+  `ListActiveClientInbounds` — только `grant.enabled AND inbound.enabled` для подписки;
+  `ListInboundGrantedClients` — включённые клиенты для sync). `settings.go`
+  (`GetSetting`/`SetSetting` для хэшей sync). `servers.SetSync` (штамп `last_sync_*`).
+  Схема **не менялась** — таблицы `clients`/`client_inbounds` заложены в `0001_init`.
+- `clients.Service` — генерация UUID (v4), пароля (hex-16) и токена (base64url-24) на бэкенде;
+  CRUD, гранты, rotate; `Links` — сборка URI по активным inbound-ам через реестр протоколов.
+- `subscription.Service` — `Build(token)` → base64 из `\n`-склеенных URI (xray + `hysteria2://`);
+  выключенный клиент → пусто; неизвестный токен → 404. Единственный публичный эндпоинт.
+- `sync.Service` — **мультидвижковый**: собирает enabled-inbound-ы ноды, группирует по движкам,
+  строит `config.json` Xray и sing-box-конфиг из inbound-ов + выданных клиентов; по SSH:
+  `mkdir -p` → бэкап → запись (`cat >`) → валидация (`xray -test` / `sing-box check`) →
+  при ошибке **восстановление бэкапа** без рестарта → `systemctl restart`. **Идемпотентность**
+  по sha256-хэшу (в `settings`). Провижининг-гейт: пока не `installed` — не пушит
+  (`ErrNotProvisioned`). Реализует `Connector` через новый `servers.Connect`.
+- `httpapi` — `/api/clients` (CRUD, enable/disable, `PUT /inbounds`, `rotate-token`, `links`,
+  `qrcode` PNG, `config` download), публичный `GET /sub/{token}` (rate-limit 60/мин),
+  `POST /api/servers/{id}/sync`. `subscription_url` в DTO из `SubBaseURL`.
+- `docs/openapi.yaml` — добавлен `POST /api/servers/{id}/sync` + схема `SyncResult`; типы фронта
+  перегенерированы (`npm run gen:api`).
+
+**Проверено:**
+- `go vet` ✓, `gofmt` ✓, `go test ./...` ✓. Новые тесты: store (клиенты/гранты/фильтрация
+  выключенных), `clients` (уникальность креденшелов, Links, rotate), `subscription`
+  (base64/пусто/404), `sync` (пуш обоих движков + команды write/validate/restart; идемпотентный
+  skip; восстановление бэкапа при отказе валидации; `ErrNotProvisioned`; форма конфигов с
+  креденшелами клиента), **httpapi e2e**: клиент → гранты на оба движка → `/sub/{token}` = 2 URI
+  (`vless://` + `hysteria2://`); disable → пусто; rotate → старый токен 404; `/sync` → рестарт xray.
+- Frontend: `npm run build` ✓, `npm run lint` ✓ (0 ошибок), `npm run test` ✓.
+- **Интеграция sync (Docker, build-тег `integration`, ждёт живого прогона на Colima):**
+  `internal/sync/validate_integration_test.go` берёт **байты из `plan()`** (ровно то, что пушит
+  sync) и валидирует их реальными `xray -test` / `sing-box check`.
+  Запуск: `go test -tags=integration -run Integration ./internal/sync/ -v`.

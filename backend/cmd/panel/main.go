@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/adp/panel/internal/auth"
+	"github.com/adp/panel/internal/clients"
 	"github.com/adp/panel/internal/config"
 	"github.com/adp/panel/internal/crypto"
 	"github.com/adp/panel/internal/db"
@@ -20,10 +21,12 @@ import (
 	"github.com/adp/panel/internal/servers"
 	"github.com/adp/panel/internal/ssh"
 	"github.com/adp/panel/internal/store"
+	"github.com/adp/panel/internal/subscription"
+	syncpkg "github.com/adp/panel/internal/sync"
 )
 
 // version is the backend build version; kept in sync with the frontend APP_VERSION.
-const version = "0.6.0.0"
+const version = "0.7.0.0"
 
 func main() {
 	logger := logging.New()
@@ -52,6 +55,9 @@ func main() {
 	authSvc := auth.NewService(st, cipher, auth.NewTokenManager(cfg.JWTSecret))
 	serversSvc := servers.NewService(st, cipher, ssh.NewDialer(), servers.NewIPAPIGeo())
 	inboundsSvc := inbounds.NewService(st)
+	clientsSvc := clients.NewService(st)
+	subscriptionSvc := subscription.NewService(st, clientsSvc)
+	syncSvc := syncpkg.NewService(st, serversSvc)
 
 	seeded, err := authSvc.SeedAdmin(context.Background(), cfg.AdminUsername, cfg.AdminPassword)
 	if err != nil {
@@ -63,13 +69,17 @@ func main() {
 	}
 
 	handler := httpapi.Router(httpapi.Deps{
-		DB:       database,
-		Store:    st,
-		Auth:     authSvc,
-		Servers:  serversSvc,
-		Inbounds: inboundsSvc,
-		Logger:   logger,
-		Version:  version,
+		DB:           database,
+		Store:        st,
+		Auth:         authSvc,
+		Servers:      serversSvc,
+		Inbounds:     inboundsSvc,
+		Clients:      clientsSvc,
+		Subscription: subscriptionSvc,
+		Sync:         syncSvc,
+		Logger:       logger,
+		Version:      version,
+		SubBaseURL:   cfg.SubBaseURL,
 	})
 	srv := httpapi.NewServer(cfg.HTTPAddr, handler)
 

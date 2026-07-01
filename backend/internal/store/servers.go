@@ -171,6 +171,14 @@ func (s *Store) ApplyCheck(ctx context.Context, id int64, c CheckUpdate) error {
 	return err
 }
 
+// SetSync stamps last_sync_at and records the sync outcome (empty errMsg = ok).
+func (s *Store) SetSync(ctx context.Context, id int64, errMsg string) error {
+	_, err := s.db.ExecContext(ctx,
+		"UPDATE servers SET last_sync_at=?, last_sync_error=?, updated_at=? WHERE id=?",
+		nowRFC3339(), errMsg, nowRFC3339(), id)
+	return err
+}
+
 // SetProvision updates provisioning status (and optionally engines).
 func (s *Store) SetProvision(ctx context.Context, id int64, status, errMsg, enginesJSON string) error {
 	if enginesJSON != "" {

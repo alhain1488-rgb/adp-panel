@@ -12,10 +12,12 @@ import (
 	"github.com/adp/panel/internal/auth"
 	"github.com/adp/panel/internal/servers"
 	"github.com/adp/panel/internal/store"
+	syncpkg "github.com/adp/panel/internal/sync"
 )
 
 type serversHandler struct {
 	svc   *servers.Service
+	sync  *syncpkg.Service
 	store *store.Store
 }
 
@@ -271,6 +273,40 @@ func (h *serversHandler) restart(w http.ResponseWriter, r *http.Request) {
 	}
 	h.audit(r, "server.restart", "server", id, `{"engine":`+strconv.Quote(body.Engine)+`}`)
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "message": "restarted", "engine": body.Engine})
+}
+
+type syncEngineDTO struct {
+	Engine   string `json:"engine"`
+	Changed  bool   `json:"changed"`
+	Skipped  bool   `json:"skipped"`
+	Inbounds int    `json:"inbounds"`
+	Clients  int    `json:"clients"`
+}
+
+func (h *serversHandler) syncNode(w http.ResponseWriter, r *http.Request) {
+	id, ok := idParam(r)
+	if !ok {
+		writeError(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+	results, err := h.sync.Sync(r.Context(), id)
+	if errors.Is(err, store.ErrNotFound) {
+		writeError(w, http.StatusNotFound, "server not found")
+		return
+	}
+	if err != nil {
+		writeJSON(w, http.StatusOK, map[string]any{"ok": false, "message": err.Error()})
+		return
+	}
+	engines := make([]syncEngineDTO, 0, len(results))
+	for _, res := range results {
+		engines = append(engines, syncEngineDTO{
+			Engine: string(res.Engine), Changed: res.Changed, Skipped: res.Skipped,
+			Inbounds: res.InboundN, Clients: res.ClientN,
+		})
+	}
+	h.audit(r, "server.sync", "server", id, `{"engines":`+strconv.Itoa(len(engines))+`}`)
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "engines": engines})
 }
 
 func (h *serversHandler) stats(w http.ResponseWriter, r *http.Request) {

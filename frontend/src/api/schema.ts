@@ -515,6 +515,50 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/servers/{id}/sync": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["IdPath"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Assemble and push each engine's config to the node
+         * @description Builds every engine's config (Xray config.json and, for Hysteria2 inbounds, the sing-box config) from the server's enabled inbounds and their granted clients, then pushes over SSH: backup, write, validate (xray -test / sing-box check), and restart the service. Idempotent by config hash. Refuses to push until the node is provisioned.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: components["parameters"]["IdPath"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Sync result (per-engine outcome) */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SyncResult"];
+                    };
+                };
+                404: components["responses"]["NotFound"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/servers/{id}/stats": {
         parameters: {
             query?: never;
@@ -1658,6 +1702,20 @@ export interface components {
         ClientInboundsInput: {
             /** @description Full desired set of granted inbound ids. */
             inbound_ids: number[];
+        };
+        SyncResult: {
+            ok: boolean;
+            /** @description Error detail when ok is false. */
+            message?: string;
+            engines?: {
+                engine: components["schemas"]["Engine"];
+                /** @description Config differed and was pushed + service restarted. */
+                changed: boolean;
+                /** @description Config unchanged (idempotent no-op). */
+                skipped: boolean;
+                inbounds?: number;
+                clients?: number;
+            }[];
         };
         ClientLink: {
             /** Format: int64 */

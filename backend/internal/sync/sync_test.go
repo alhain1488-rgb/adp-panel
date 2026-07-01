@@ -1,0 +1,213 @@
+package sync
+
+import (
+	"context"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/adp/panel/internal/db"
+	"github.com/adp/panel/internal/ssh"
+	"github.com/adp/panel/internal/ssh/sshtest"
+	"github.com/adp/panel/internal/store"
+)
+
+// fakeConnector hands out a preconfigured runner (Sync ignores the returned server).
+type fakeConnector struct {
+	runner ssh.Runner
+	err    error
+}
+
+func (f *fakeConnector) Connect(_ context.Context, _ int64) (ssh.Runner, *store.Server, error) {
+	return f.runner, nil, f.err
+}
+
+// newFixture builds an installed server with one xray inbound and one hysteria2
+// inbound, a client, and grants to both.
+func newFixture(t *testing.T) (*store.Store, int64) {
+	t.Helper()
+	database, err := db.Open(filepath.Join(t.TempDir(), "panel.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = database.Close() })
+	st := store.New(database)
+	ctx := context.Background()
+
+	srv, err := st.CreateServer(ctx, store.ServerParams{
+		Name: "n1", Host: "203.0.113.9", SSHPort: 22, SSHUser: "root", SSHAuthMethod: "password",
+		XrayConfigPath: "/usr/local/etc/xray/config.json", XrayServiceName: "xray",
+		HysteriaConfigPath: "/etc/sing-box/config.json", HysteriaServiceName: "sing-box",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetProvision(ctx, srv.ID, "installed", "", ""); err != nil {
+		t.Fatal(err)
+	}
+
+	vless, err := st.CreateInbound(ctx, srv.ID, store.InboundParams{
+		Tag: "vless-tcp", Protocol: "vless", Port: 443, Enabled: true,
+		SettingsJSON:       `{"decryption":"none"}`,
+		StreamSettingsJSON: `{"network":"tcp","security":"none"}`,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	hy, err := st.CreateInbound(ctx, srv.ID, store.InboundParams{
+		Tag: "hy2", Protocol: "hysteria2", Port: 36712, Enabled: true,
+		SettingsJSON: `{"up":"100 mbps","down":"200 mbps"}`,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	c, err := st.CreateClient(ctx, store.ClientParams{
+		Name: "alice", UUID: "11111111-2222-3333-4444-555555555555",
+		Password: "secretpw", SubscriptionToken: "tok123", Enabled: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetClientInbounds(ctx, c.ID, []int64{vless.ID, hy.ID}); err != nil {
+		t.Fatal(err)
+	}
+	return st, srv.ID
+}
+
+func TestSync_PushesBothEngines(t *testing.T) {
+	st, serverID := newFixture(t)
+	runner := &sshtest.MockRunner{} // nil handler → every command exits 0
+	svc := NewService(st, &fakeConnector{runner: runner})
+
+	results, err := svc.Sync(context.Background(), serverID)
+	if err != nil {
+		t.Fatalf("sync: %v", err)
+	}
+	if len(results) != 2 {
+		t.Fatalf("results = %d, want 2", len(results))
+	}
+	for _, r := range results {
+		if !r.Changed || r.Skipped {
+			t.Errorf("engine %s: changed=%v skipped=%v", r.Engine, r.Changed, r.Skipped)
+		}
+	}
+	// Both engines were written, validated, and restarted.
+	for _, want := range []string{
+		"cat > '/usr/local/etc/xray/config.json'",
+		"cat > '/etc/sing-box/config.json'",
+		"xray -test -config '/usr/local/etc/xray/config.json'",
+		"sing-box check -c '/etc/sing-box/config.json'",
+		"systemctl restart 'xray'",
+		"systemctl restart 'sing-box'",
+	} {
+		if !runner.Ran(want) {
+			t.Errorf("expected command to run: %s", want)
+		}
+	}
+
+	// last_sync recorded without error.
+	srv, _ := st.GetServer(context.Background(), serverID)
+	if srv.LastSyncAt == "" || srv.LastSyncError != "" {
+		t.Errorf("last_sync_at=%q err=%q", srv.LastSyncAt, srv.LastSyncError)
+	}
+}
+
+func TestSync_Idempotent(t *testing.T) {
+	st, serverID := newFixture(t)
+	svc := NewService(st, &fakeConnector{runner: &sshtest.MockRunner{}})
+
+	if _, err := svc.Sync(context.Background(), serverID); err != nil {
+		t.Fatalf("first sync: %v", err)
+	}
+	// Second sync with an unchanged config must skip both engines (no restart).
+	runner2 := &sshtest.MockRunner{}
+	svc2 := NewService(st, &fakeConnector{runner: runner2})
+	results, err := svc2.Sync(context.Background(), serverID)
+	if err != nil {
+		t.Fatalf("second sync: %v", err)
+	}
+	for _, r := range results {
+		if r.Changed || !r.Skipped {
+			t.Errorf("engine %s not skipped on unchanged config", r.Engine)
+		}
+	}
+	if runner2.Ran("systemctl restart") {
+		t.Error("restart should not run when config is unchanged")
+	}
+}
+
+func TestSync_ValidationFailureRestoresBackup(t *testing.T) {
+	st, serverID := newFixture(t)
+	runner := &sshtest.MockRunner{
+		Handler: func(cmd, _ string) (ssh.Result, error) {
+			if strings.Contains(cmd, "xray -test") {
+				return ssh.Result{ExitCode: 1, Stderr: "bad config"}, nil
+			}
+			return ssh.Result{}, nil
+		},
+	}
+	svc := NewService(st, &fakeConnector{runner: runner})
+
+	_, err := svc.Sync(context.Background(), serverID)
+	if err == nil {
+		t.Fatal("expected sync error on invalid config")
+	}
+	if !strings.Contains(err.Error(), "rejected by engine") {
+		t.Errorf("error = %v", err)
+	}
+	// Backup was restored and the service was NOT restarted.
+	if !runner.Ran("cp '/usr/local/etc/xray/config.json.adp.bak' '/usr/local/etc/xray/config.json'") {
+		t.Error("expected backup restore")
+	}
+	if runner.Ran("systemctl restart 'xray'") {
+		t.Error("service must not restart when validation fails")
+	}
+	srv, _ := st.GetServer(context.Background(), serverID)
+	if srv.LastSyncError == "" {
+		t.Error("expected last_sync_error to be recorded")
+	}
+}
+
+func TestSync_NotProvisioned(t *testing.T) {
+	st, serverID := newFixture(t)
+	// Roll the node back to a not-installed state.
+	if err := st.SetProvision(context.Background(), serverID, "pending", "", ""); err != nil {
+		t.Fatal(err)
+	}
+	svc := NewService(st, &fakeConnector{runner: &sshtest.MockRunner{}})
+	if _, err := svc.Sync(context.Background(), serverID); err != ErrNotProvisioned {
+		t.Fatalf("err = %v, want ErrNotProvisioned", err)
+	}
+}
+
+func TestBuildConfigs_ShapeAndClients(t *testing.T) {
+	st, serverID := newFixture(t)
+	svc := NewService(st, &fakeConnector{runner: &sshtest.MockRunner{}})
+	srv, _ := st.GetServer(context.Background(), serverID)
+
+	plans, err := svc.plan(context.Background(), srv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plans) != 2 {
+		t.Fatalf("plans = %d, want 2", len(plans))
+	}
+	for _, p := range plans {
+		body := string(p.content)
+		if !strings.Contains(body, `"inbounds"`) {
+			t.Errorf("%s config missing inbounds: %s", p.engine, body)
+		}
+		// The granted client's credential must appear in the assembled config.
+		switch p.engine {
+		case "xray":
+			if !strings.Contains(body, "11111111-2222-3333-4444-555555555555") {
+				t.Errorf("xray config missing client uuid: %s", body)
+			}
+		case "hysteria":
+			if !strings.Contains(body, "secretpw") {
+				t.Errorf("hysteria config missing client password: %s", body)
+			}
+		}
+	}
+}

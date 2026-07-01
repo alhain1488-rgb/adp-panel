@@ -257,6 +257,28 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
 
+  /api/servers/{id}/sync:
+    parameters:
+      - $ref: '#/components/parameters/IdPath'
+    post:
+      tags: [Servers]
+      summary: Assemble and push each engine's config to the node
+      description: >
+        Builds every engine's config (Xray config.json and, for Hysteria2
+        inbounds, the sing-box config) from the server's enabled inbounds and
+        their granted clients, then pushes over SSH: backup, write, validate
+        (xray -test / sing-box check), and restart the service. Idempotent by
+        config hash. Refuses to push until the node is provisioned.
+      responses:
+        '200':
+          description: Sync result (per-engine outcome)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SyncResult'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
   /api/servers/{id}/stats:
     parameters:
       - $ref: '#/components/parameters/IdPath'
@@ -1156,6 +1178,34 @@ components:
             type: integer
             format: int64
           description: Full desired set of granted inbound ids.
+
+    SyncResult:
+      type: object
+      required: [ok]
+      properties:
+        ok:
+          type: boolean
+        message:
+          type: string
+          description: Error detail when ok is false.
+        engines:
+          type: array
+          items:
+            type: object
+            required: [engine, changed, skipped]
+            properties:
+              engine:
+                $ref: '#/components/schemas/Engine'
+              changed:
+                type: boolean
+                description: Config differed and was pushed + service restarted.
+              skipped:
+                type: boolean
+                description: Config unchanged (idempotent no-op).
+              inbounds:
+                type: integer
+              clients:
+                type: integer
 
     ClientLink:
       type: object

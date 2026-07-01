@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/adp/panel/internal/auth"
+	"github.com/adp/panel/internal/clients"
 	"github.com/adp/panel/internal/crypto"
 	"github.com/adp/panel/internal/db"
 	"github.com/adp/panel/internal/inbounds"
@@ -16,6 +17,8 @@ import (
 	"github.com/adp/panel/internal/ssh"
 	"github.com/adp/panel/internal/ssh/sshtest"
 	"github.com/adp/panel/internal/store"
+	"github.com/adp/panel/internal/subscription"
+	syncpkg "github.com/adp/panel/internal/sync"
 )
 
 type testEnv struct {
@@ -23,6 +26,8 @@ type testEnv struct {
 	svc     *auth.Service
 	store   *store.Store
 	servers *servers.Service
+	clients *clients.Service
+	sync    *syncpkg.Service
 	runner  *sshtest.MockRunner
 	dialer  *sshtest.MockDialer
 }
@@ -76,15 +81,25 @@ func newTestEnv(t *testing.T) *testEnv {
 	dialer := &sshtest.MockDialer{Runner: runner}
 	serversSvc := servers.NewService(st, cipher, dialer, servers.NoopGeo{})
 	inboundsSvc := inbounds.NewService(st)
+	clientsSvc := clients.NewService(st)
+	subscriptionSvc := subscription.NewService(st, clientsSvc)
+	syncSvc := syncpkg.NewService(st, serversSvc)
 
 	router := Router(Deps{
-		DB:       database,
-		Store:    st,
-		Auth:     authSvc,
-		Servers:  serversSvc,
-		Inbounds: inboundsSvc,
-		Logger:   logging.New(),
-		Version:  "test",
+		DB:           database,
+		Store:        st,
+		Auth:         authSvc,
+		Servers:      serversSvc,
+		Inbounds:     inboundsSvc,
+		Clients:      clientsSvc,
+		Subscription: subscriptionSvc,
+		Sync:         syncSvc,
+		Logger:       logging.New(),
+		Version:      "test",
+		SubBaseURL:   "http://panel.test",
 	})
-	return &testEnv{router: router, svc: authSvc, store: st, servers: serversSvc, runner: runner, dialer: dialer}
+	return &testEnv{
+		router: router, svc: authSvc, store: st, servers: serversSvc,
+		clients: clientsSvc, sync: syncSvc, runner: runner, dialer: dialer,
+	}
 }
