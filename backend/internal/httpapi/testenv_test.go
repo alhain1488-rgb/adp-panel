@@ -10,6 +10,7 @@ import (
 	"github.com/adp/panel/internal/auth"
 	"github.com/adp/panel/internal/crypto"
 	"github.com/adp/panel/internal/db"
+	"github.com/adp/panel/internal/inbounds"
 	"github.com/adp/panel/internal/logging"
 	"github.com/adp/panel/internal/servers"
 	"github.com/adp/panel/internal/ssh"
@@ -74,14 +75,16 @@ func newTestEnv(t *testing.T) *testEnv {
 	runner := &sshtest.MockRunner{Handler: defaultSSHHandler}
 	dialer := &sshtest.MockDialer{Runner: runner}
 	serversSvc := servers.NewService(st, cipher, dialer, servers.NoopGeo{})
+	inboundsSvc := inbounds.NewService(st)
 
 	router := Router(Deps{
-		DB:      database,
-		Store:   st,
-		Auth:    authSvc,
-		Servers: serversSvc,
-		Logger:  logging.New(),
-		Version: "test",
+		DB:       database,
+		Store:    st,
+		Auth:     authSvc,
+		Servers:  serversSvc,
+		Inbounds: inboundsSvc,
+		Logger:   logging.New(),
+		Version:  "test",
 	})
 	return &testEnv{router: router, svc: authSvc, store: st, servers: serversSvc, runner: runner, dialer: dialer}
 }

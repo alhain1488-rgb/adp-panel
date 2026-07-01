@@ -2,4 +2,4 @@
 // Scheme: MAJOR.MINOR.PATCH.BUILD — bump BUILD for small tweaks/fixes, PATCH for
 // user-facing features, MINOR at phase boundaries. Claude bumps this on EVERY
 // change (see CLAUDE.md "Версионность").
-export const APP_VERSION = '0.5.0.0'
+export const APP_VERSION = '0.6.0.0'

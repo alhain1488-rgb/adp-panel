@@ -1,0 +1,11 @@
+# Local xray-core node for integration testing the sync engine (Phase 6).
+# Mount a generated config.json into ./config and bring the node up; validate
+# with `docker compose exec xray xray -test -config /etc/xray/config.json`.
+services:
+  xray:
+    image: ghcr.io/xtls/xray-core:latest
+    command: ["-config", "/etc/xray/config.json"]
+    volumes:
+      - ./config:/etc/xray:ro
+    network_mode: host
+    restart: unless-stopped

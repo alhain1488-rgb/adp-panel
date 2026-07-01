@@ -13,18 +13,20 @@ import (
 	"github.com/go-chi/httprate"
 
 	"github.com/adp/panel/internal/auth"
+	"github.com/adp/panel/internal/inbounds"
 	"github.com/adp/panel/internal/servers"
 	"github.com/adp/panel/internal/store"
 )
 
 // Deps are the dependencies the HTTP layer needs.
 type Deps struct {
-	DB      *sql.DB
-	Store   *store.Store
-	Auth    *auth.Service
-	Servers *servers.Service
-	Logger  *slog.Logger
-	Version string
+	DB       *sql.DB
+	Store    *store.Store
+	Auth     *auth.Service
+	Servers  *servers.Service
+	Inbounds *inbounds.Service
+	Logger   *slog.Logger
+	Version  string
 }
 
 // Router builds the chi router with middleware and routes mounted.
@@ -66,6 +68,8 @@ func Router(d Deps) http.Handler {
 
 		r.Get("/api/logs", ah.listLogs)
 
+		ih := &inboundsHandler{svc: d.Inbounds, servers: d.Servers, store: d.Store}
+
 		r.Route("/api/servers", func(r chi.Router) {
 			r.Get("/", sh.list)
 			r.Post("/", sh.create)
@@ -77,7 +81,15 @@ func Router(d Deps) http.Handler {
 				r.Post("/install", sh.install)
 				r.Post("/restart-xray", sh.restart)
 				r.Get("/stats", sh.stats)
+				r.Get("/inbounds", ih.listByServer)
+				r.Post("/inbounds", ih.create)
 			})
+		})
+
+		r.Route("/api/inbounds/{id}", func(r chi.Router) {
+			r.Get("/", ih.get)
+			r.Put("/", ih.update)
+			r.Delete("/", ih.del)
 		})
 	})
 

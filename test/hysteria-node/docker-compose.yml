@@ -1,0 +1,11 @@
+# Local Hysteria2 (sing-box) node for integration testing the sync engine.
+# Mount a generated sing-box config into ./config; validate with
+# `docker compose exec singbox sing-box check -c /etc/sing-box/config.json`.
+services:
+  singbox:
+    image: ghcr.io/sagernet/sing-box:latest
+    command: ["run", "-c", "/etc/sing-box/config.json"]
+    volumes:
+      - ./config:/etc/sing-box:ro
+    network_mode: host
+    restart: unless-stopped

@@ -131,3 +131,25 @@ inbound с видимыми дефолтами и live-превью (в духе
 - Живой end-to-end (docker compose, v0.5.0.0): login→create (`installing`, секреты не в ответе)→
   авто-провижининг к недоступной ноде корректно переходит в `failed` с текстом SSH-ошибки; list;
   guard 401. Реальная установка движков будет проверена в Фазах 5–6 на dockerized-Debian-ноде.
+
+## Фаза 5 — Inbound-ы и реестр протоколов ✅
+
+**Сделано:**
+- `protocols` — реестр + интерфейс `Protocol` (`Name`, `Engine`, `BuildInbound`, `BuildLink`).
+  Адаптеры: **VLESS** (Reality/TLS/транспорты), **VMess**, **Trojan**, **Shadowsocks** (движок
+  xray) и **Hysteria2** (движок sing-box). Каждый регистрируется в своём `init()`. Генерация
+  **Reality-ключей** (X25519) и short-id на бэкенде (`reality.go`). Общие хелперы xray
+  (`buildXrayStream`, `linkQuery`, `xrayInboundFragment`).
+- `store` — CRUD inbound-ов (JSON-поля `settings/stream_settings/sniffing`, `client_count`).
+  `inbounds.Service` — валидация протокола через реестр, автогенерация Reality-ключей при создании
+  (заглушки `<generated>` заменяются реальными). `httpapi` — эндпоинты контракта:
+  `GET/POST /api/servers/{id}/inbounds`, `GET/PUT/DELETE /api/inbounds/{id}` (+ `engine` в DTO), аудит.
+- `test/xray-node`, `test/hysteria-node` — dockerized-ноды + README.
+
+**Проверено:**
+- `go vet` ✓, `gofmt` ✓, `go test ./...` ✓ (все 5 адаптеров: engine/BuildInbound-JSON/BuildLink-URI;
+  inbound CRUD + генерация Reality-ключей на бэкенде + отказ на неизвестном протоколе + движок hysteria).
+- **Интеграция (Docker, build-тег `integration`):** конфиг **VLESS Reality + VMess + Trojan**,
+  собранный реестром, принят реальным **`xray -test`** (Xray 26.3.27 → «Configuration OK»);
+  конфиг **Hysteria2** принят **`sing-box check`** (с реальным self-signed сертом).
+  Запуск: `go test -tags=integration -run Integration ./internal/protocols/`.
