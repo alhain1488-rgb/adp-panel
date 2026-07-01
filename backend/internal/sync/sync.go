@@ -88,6 +88,28 @@ func (s *Service) Sync(ctx context.Context, serverID int64) ([]EngineResult, err
 	return results, nil
 }
 
+// Async pushes a server's config in the background (fire-and-forget). Errors are
+// recorded in the server's last_sync_error. Used to auto-apply config changes.
+func (s *Service) Async(serverID int64) {
+	go func() { _, _ = s.Sync(context.Background(), serverID) }()
+}
+
+// AsyncAll re-syncs every installed server in the background. Sync is idempotent
+// by config hash, so unaffected nodes are a cheap no-op. Used after client-level
+// changes that may touch inbounds on several servers.
+func (s *Service) AsyncAll() {
+	go func() {
+		ctx := context.Background()
+		ids, err := s.store.ListInstalledServerIDs(ctx)
+		if err != nil {
+			return
+		}
+		for _, id := range ids {
+			_, _ = s.Sync(ctx, id)
+		}
+	}()
+}
+
 // enginePlan is one engine's assembled, ready-to-push config.
 type enginePlan struct {
 	engine   protocols.Engine

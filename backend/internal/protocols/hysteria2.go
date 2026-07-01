@@ -3,6 +3,7 @@ package protocols
 import (
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/url"
 	"strconv"
 	"strings"
@@ -80,13 +81,17 @@ func (hysteria2) BuildInbound(in Inbound, clients []Client) (json.RawMessage, er
 
 func (hysteria2) BuildLink(srv Server, in Inbound, c Client) (string, error) {
 	q := url.Values{}
+	// Hysteria2 runs over QUIC/TLS with the h3 ALPN; clients (sing-box-flavored)
+	// expect these advertised in the URI.
+	q.Set("security", "tls")
+	q.Set("alpn", "h3")
 
 	t := msub(in.StreamSettings, "tlsSettings")
-	sni := mstr(t, "serverName")
-	if sni == "" {
-		sni = srv.Host
+	// Advertise SNI only when it is a real hostname. An IP-as-SNI is invalid per
+	// the TLS spec and makes several clients refuse to start the config.
+	if sni := mstr(t, "serverName"); sni != "" && net.ParseIP(sni) == nil {
+		q.Set("sni", sni)
 	}
-	q.Set("sni", sni)
 	if mbool(t, "insecure") {
 		q.Set("insecure", "1")
 	}
@@ -97,6 +102,6 @@ func (hysteria2) BuildLink(srv Server, in Inbound, c Client) (string, error) {
 	}
 
 	remark := linkRemark(srv, in)
-	return fmt.Sprintf("hysteria2://%s@%s:%d/?%s#%s",
+	return fmt.Sprintf("hysteria2://%s@%s:%d?%s#%s",
 		url.QueryEscape(c.Password), srv.Host, in.Port, q.Encode(), url.QueryEscape(remark)), nil
 }

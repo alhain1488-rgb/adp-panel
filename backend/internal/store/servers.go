@@ -171,6 +171,25 @@ func (s *Store) ApplyCheck(ctx context.Context, id int64, c CheckUpdate) error {
 	return err
 }
 
+// ListInstalledServerIDs returns the ids of servers whose engines are installed
+// (the only ones sync will push to).
+func (s *Store) ListInstalledServerIDs(ctx context.Context) ([]int64, error) {
+	rows, err := s.db.QueryContext(ctx, "SELECT id FROM servers WHERE provision_status = 'installed' ORDER BY id ASC")
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	out := []int64{}
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out = append(out, id)
+	}
+	return out, rows.Err()
+}
+
 // SetSync stamps last_sync_at and records the sync outcome (empty errMsg = ok).
 func (s *Store) SetSync(ctx context.Context, id int64, errMsg string) error {
 	_, err := s.db.ExecContext(ctx,

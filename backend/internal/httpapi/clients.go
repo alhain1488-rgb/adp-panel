@@ -12,12 +12,22 @@ import (
 	"github.com/adp/panel/internal/auth"
 	"github.com/adp/panel/internal/clients"
 	"github.com/adp/panel/internal/store"
+	syncpkg "github.com/adp/panel/internal/sync"
 )
 
 type clientsHandler struct {
 	svc     *clients.Service
 	store   *store.Store
 	subBase string
+	sync    *syncpkg.Service
+}
+
+// autoSync re-pushes config to all installed nodes after a client-level change
+// (grants, enable/disable, delete). Sync is idempotent, so unaffected nodes no-op.
+func (h *clientsHandler) autoSync() {
+	if h.sync != nil {
+		h.sync.AsyncAll()
+	}
 }
 
 // --- DTOs (mirror docs/openapi.yaml) ---
@@ -180,6 +190,7 @@ func (h *clientsHandler) del(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.audit(r, "client.delete", id, "{}")
+	h.autoSync()
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -208,6 +219,7 @@ func (h *clientsHandler) setEnabled(w http.ResponseWriter, r *http.Request, enab
 		action = "client.enable"
 	}
 	h.audit(r, action, id, "{}")
+	h.autoSync()
 	writeJSON(w, http.StatusOK, h.toDTO(r.Context(), c, true))
 }
 
@@ -232,6 +244,7 @@ func (h *clientsHandler) setInbounds(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.audit(r, "client.grants", id, `{"count":`+strconv.Itoa(len(in.InboundIDs))+`}`)
+	h.autoSync()
 	writeJSON(w, http.StatusOK, h.toDTO(r.Context(), c, true))
 }
 

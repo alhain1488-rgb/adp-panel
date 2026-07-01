@@ -11,12 +11,14 @@ import (
 	"github.com/adp/panel/internal/protocols"
 	"github.com/adp/panel/internal/servers"
 	"github.com/adp/panel/internal/store"
+	syncpkg "github.com/adp/panel/internal/sync"
 )
 
 type inboundsHandler struct {
 	svc     *inbounds.Service
 	servers *servers.Service
 	store   *store.Store
+	sync    *syncpkg.Service
 }
 
 type inboundDTO struct {
@@ -131,6 +133,7 @@ func (h *inboundsHandler) create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.audit(r, "inbound.create", created.ID, `{"tag":`+strconv.Quote(created.Tag)+`,"server_id":`+strconv.FormatInt(id, 10)+`}`)
+	h.autoSync(id)
 	writeJSON(w, http.StatusCreated, toInboundDTO(created))
 }
 
@@ -177,6 +180,7 @@ func (h *inboundsHandler) update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.audit(r, "inbound.update", updated.ID, "{}")
+	h.autoSync(updated.ServerID)
 	writeJSON(w, http.StatusOK, toInboundDTO(updated))
 }
 
@@ -186,6 +190,11 @@ func (h *inboundsHandler) del(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid id")
 		return
 	}
+	// Capture the owning server before deletion so we can re-sync it afterwards.
+	var serverID int64
+	if in, err := h.svc.Get(r.Context(), id); err == nil {
+		serverID = in.ServerID
+	}
 	if err := h.svc.Delete(r.Context(), id); errors.Is(err, store.ErrNotFound) {
 		writeError(w, http.StatusNotFound, "inbound not found")
 		return
@@ -194,5 +203,14 @@ func (h *inboundsHandler) del(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.audit(r, "inbound.delete", id, "{}")
+	h.autoSync(serverID)
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// autoSync pushes the server's regenerated config to the node in the background
+// so inbound edits take effect without a manual sync step.
+func (h *inboundsHandler) autoSync(serverID int64) {
+	if h.sync != nil && serverID != 0 {
+		h.sync.Async(serverID)
+	}
 }

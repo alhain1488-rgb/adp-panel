@@ -94,7 +94,7 @@ func Router(d Deps) http.Handler {
 		r.Get("/api/settings", seth.get)
 		r.Put("/api/settings", seth.update)
 
-		ih := &inboundsHandler{svc: d.Inbounds, servers: d.Servers, store: d.Store}
+		ih := &inboundsHandler{svc: d.Inbounds, servers: d.Servers, store: d.Store, sync: d.Sync}
 
 		r.Route("/api/servers", func(r chi.Router) {
 			r.Get("/", sh.list)
@@ -119,7 +119,7 @@ func Router(d Deps) http.Handler {
 			r.Delete("/", ih.del)
 		})
 
-		ch := &clientsHandler{svc: d.Clients, store: d.Store, subBase: d.SubBaseURL}
+		ch := &clientsHandler{svc: d.Clients, store: d.Store, subBase: d.SubBaseURL, sync: d.Sync}
 		r.Route("/api/clients", func(r chi.Router) {
 			r.Get("/", ch.list)
 			r.Post("/", ch.create)

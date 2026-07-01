@@ -314,6 +314,43 @@ func TestHysteria2(t *testing.T) {
 	if !strings.Contains(link, "obfs=salamander") {
 		t.Errorf("link missing obfs: %s", link)
 	}
+	// Client-compatibility params (see fix: real clients need these).
+	if !strings.Contains(link, "alpn=h3") {
+		t.Errorf("link missing alpn=h3: %s", link)
+	}
+	if !strings.Contains(link, "security=tls") {
+		t.Errorf("link missing security=tls: %s", link)
+	}
+	// A hostname SNI is advertised; the "/?" path form must not be used.
+	if !strings.Contains(link, "sni=hy.example.com") {
+		t.Errorf("hostname sni should be present: %s", link)
+	}
+	if strings.Contains(link, ":443/?") {
+		t.Errorf("link must not use the '/?' path form: %s", link)
+	}
+}
+
+// TestHysteria2_IPHostOmitsSNI: when the inbound has no real hostname, the SNI
+// (which would be an IP) is omitted — an IP-as-SNI breaks several clients.
+func TestHysteria2_IPHostOmitsSNI(t *testing.T) {
+	p := mustGet(t, "hysteria2")
+	in := Inbound{
+		Tag: "hy2", Protocol: "hysteria2", Port: 36712,
+		Settings: map[string]any{"obfs": map[string]any{"type": "salamander", "password": "pw"}},
+		StreamSettings: map[string]any{
+			"tlsSettings": map[string]any{"insecure": true},
+		},
+	}
+	link, err := p.BuildLink(Server{Host: "203.0.113.9"}, in, testClient())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(link, "sni=") {
+		t.Errorf("IP host must not produce an sni param: %s", link)
+	}
+	if !strings.Contains(link, "insecure=1") || !strings.Contains(link, "alpn=h3") {
+		t.Errorf("expected insecure=1 and alpn=h3: %s", link)
+	}
 }
 
 func TestParseMbps(t *testing.T) {
