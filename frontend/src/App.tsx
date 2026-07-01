@@ -3,9 +3,7 @@ import { BrowserRouter } from 'react-router-dom'
 import { useAuth } from './auth/auth-context'
 import { AppLayout } from './components/layout/app-layout'
 import LoginPage from './pages/Login'
-import DashboardPage from './pages/Dashboard'
 import ServersPage from './pages/Servers'
-import ServerDetailPage from './pages/ServerDetail'
 import ClientsPage from './pages/Clients'
 import ClientDetailPage from './pages/ClientDetail'
 import SettingsPage from './pages/Settings'
@@ -34,9 +32,7 @@ export default function App() {
             </Protected>
           }
         >
-          <Route path="/" element={<DashboardPage />} />
-          <Route path="/servers" element={<ServersPage />} />
-          <Route path="/servers/:id" element={<ServerDetailPage />} />
+          <Route path="/" element={<ServersPage />} />
           <Route path="/clients" element={<ClientsPage />} />
           <Route path="/clients/:id" element={<ClientDetailPage />} />
           <Route path="/settings" element={<SettingsPage />} />

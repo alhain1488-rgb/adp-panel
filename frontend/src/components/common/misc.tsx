@@ -55,9 +55,11 @@ export function UsageBar({ label, percent, detail }: { label: string; percent: n
   const tone = percent >= 85 ? 'bg-destructive' : percent >= 65 ? 'bg-warning' : 'bg-primary'
   return (
     <div>
-      <div className="mb-1 flex items-center justify-between text-xs">
-        <span className="text-muted-foreground">{label}</span>
-        <span className="font-medium tabular-nums">{percent.toFixed(0)}%{detail ? ` · ${detail}` : ''}</span>
+      <div className="mb-1 flex items-center justify-between gap-2 text-xs">
+        <span className="shrink-0 text-muted-foreground">{label}</span>
+        <span className="whitespace-nowrap font-medium tabular-nums">
+          {percent.toFixed(0)}%{detail ? ` · ${detail}` : ''}
+        </span>
       </div>
       <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
         <div className={cn('h-full rounded-full transition-all', tone)} style={{ width: `${Math.min(percent, 100)}%` }} />
