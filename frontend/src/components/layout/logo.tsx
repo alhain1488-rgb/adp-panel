@@ -6,7 +6,7 @@ export function DisgustingLogo({ className }: { className?: string }) {
     <img
       src="/cheremsha.webp"
       alt="Absolutely Disgusting Panel"
-      className={cn('rounded-md bg-white object-cover', className)}
+      className={cn('rounded-lg bg-white object-contain p-0.5', className)}
     />
   )
 }

@@ -2,9 +2,9 @@ import { useState } from 'react'
 import {
   Activity,
   AlertTriangle,
-  Boxes,
   ChevronDown,
   Clock,
+  EthernetPort,
   HardDriveDownload,
   Loader2,
   MoreVertical,
@@ -16,13 +16,14 @@ import {
 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { cn, formatRelativeTime } from '@/lib/utils'
-import { EmptyState, StatCard, UsageBar } from '@/components/common/misc'
+import { useMediaQuery } from '@/lib/use-media-query'
+import { EmptyState, UsageBar } from '@/components/common/misc'
+import { CheckEngineIcon } from '@/components/common/icons'
 import { EngineBadge, ProtocolBadge, StatusBadge } from '@/components/common/badges'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -74,6 +75,33 @@ function ProvisionIndicator({ status }: { status: NonNullable<Server['provision_
   return null
 }
 
+// MetricTile is a compact, fixed-shape stat used inside the expanded card so the
+// tiles stay uniform in the narrow grid cell.
+function MetricTile({
+  label,
+  value,
+  icon: Icon,
+  hint,
+}: {
+  label: string
+  value: React.ReactNode
+  icon: React.ComponentType<{ className?: string }>
+  hint?: string
+}) {
+  return (
+    <div className="flex items-center justify-between gap-2 rounded-lg border bg-card p-3">
+      <div className="min-w-0">
+        <p className="truncate text-xs text-muted-foreground">{label}</p>
+        <p className="truncate text-lg font-semibold leading-tight tracking-tight">{value}</p>
+        {hint && <p className="truncate text-[11px] text-muted-foreground">{hint}</p>}
+      </div>
+      <div className="shrink-0 rounded-md bg-primary/10 p-2 text-primary">
+        <Icon className="h-4 w-4" />
+      </div>
+    </div>
+  )
+}
+
 function formatUptime(seconds?: number): string {
   if (seconds == null || seconds <= 0) return '—'
   const days = Math.floor(seconds / 86400)
@@ -85,9 +113,16 @@ function formatUptime(seconds?: number): string {
 }
 
 export function ServerCard({ server }: { server: Server }) {
+  // Desktop (md+, where cards sit in a multi-column grid): open details in a modal
+  // so the grid never reflows. Mobile (single column): expand inline in place.
+  const isDesktop = useMediaQuery('(min-width: 768px)')
   const [expanded, setExpanded] = useState(false)
+  const [modalOpen, setModalOpen] = useState(false)
   const [editOpen, setEditOpen] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
+
+  const isOpen = isDesktop ? modalOpen : expanded
+  const toggleOpen = () => (isDesktop ? setModalOpen((v) => !v) : setExpanded((v) => !v))
 
   const { toast } = useToast()
   const checkServer = useCheckServer()
@@ -132,14 +167,28 @@ export function ServerCard({ server }: { server: Server }) {
     }
   }
 
+  const detail = (
+    <ServerCardDetail
+      server={server}
+      onEdit={() => setEditOpen(true)}
+      onDelete={() => setDeleteOpen(true)}
+      onCheck={handleCheck}
+      onRestart={handleRestart}
+      onReinstall={handleInstall}
+      checking={checkServer.isPending}
+      restarting={restartEngine.isPending}
+      installing={installServer.isPending}
+    />
+  )
+
   return (
-    <Card className={cn('overflow-hidden transition-colors', expanded && 'border-primary/40')}>
-      {/* Header — clicking toggles inline expansion */}
+    <Card className={cn('overflow-hidden transition-colors', isOpen && 'border-primary/40')}>
+      {/* Header — clicking expands inline (mobile) or opens the modal (desktop) */}
       <button
         type="button"
-        onClick={() => setExpanded((v) => !v)}
+        onClick={toggleOpen}
         className="flex w-full items-start justify-between gap-2 p-5 text-left"
-        aria-expanded={expanded}
+        aria-expanded={isOpen}
       >
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
@@ -160,7 +209,7 @@ export function ServerCard({ server }: { server: Server }) {
               <span className="text-xs text-muted-foreground">No engines</span>
             )}
             <span className="flex items-center gap-1 text-xs text-muted-foreground">
-              <Boxes className="h-3.5 w-3.5" />
+              <EthernetPort className="h-3.5 w-3.5" />
               {server.inbound_count ?? 0}
             </span>
             <span className="flex items-center gap-1 text-xs text-muted-foreground">
@@ -170,22 +219,30 @@ export function ServerCard({ server }: { server: Server }) {
           </div>
         </div>
         <ChevronDown
-          className={cn('h-5 w-5 shrink-0 text-muted-foreground transition-transform', expanded && 'rotate-180')}
+          className={cn('h-5 w-5 shrink-0 text-muted-foreground transition-transform', isOpen && 'rotate-180')}
         />
       </button>
 
-      {expanded && (
-        <ServerCardDetail
-          server={server}
-          onEdit={() => setEditOpen(true)}
-          onDelete={() => setDeleteOpen(true)}
-          onCheck={handleCheck}
-          onRestart={handleRestart}
-          onReinstall={handleInstall}
-          checking={checkServer.isPending}
-          restarting={restartEngine.isPending}
-          installing={installServer.isPending}
-        />
+      {/* Mobile: inline expansion in place */}
+      {!isDesktop && expanded && <div className="border-t px-5 pb-5 pt-5">{detail}</div>}
+
+      {/* Desktop: details in a modal so the server grid never reflows */}
+      {isDesktop && (
+        <Dialog open={modalOpen} onOpenChange={setModalOpen}>
+          <DialogContent className="max-h-[85vh] max-w-3xl overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                {server.name}
+                <StatusBadge status={server.status} />
+              </DialogTitle>
+              <DialogDescription>
+                {server.geo_country ? `${server.geo_country} · ` : ''}
+                {server.host}
+              </DialogDescription>
+            </DialogHeader>
+            {detail}
+          </DialogContent>
+        </Dialog>
       )}
 
       <ServerFormDialog open={editOpen} onOpenChange={setEditOpen} server={server} />
@@ -292,7 +349,7 @@ function ServerCardDetail({
   ].filter(Boolean)
 
   return (
-    <CardContent className="space-y-5 border-t pt-5">
+    <div className="space-y-5">
       {/* Server actions */}
       <div className="flex flex-wrap items-center gap-2">
         <Button variant="outline" size="sm" onClick={onCheck} disabled={checking}>
@@ -379,8 +436,8 @@ function ServerCardDetail({
         </div>
       )}
 
-      {/* Metrics */}
-      <div className="grid grid-cols-2 gap-3">
+      {/* Metrics: usage bars full width, then three equal-size tiles */}
+      <div className="space-y-3">
         <Card>
           <CardContent className="space-y-3 p-4">
             <UsageBar label="CPU" percent={stats?.cpu_percent ?? 0} />
@@ -398,23 +455,25 @@ function ServerCardDetail({
             />
           </CardContent>
         </Card>
-        <StatCard label="Uptime" value={formatUptime(stats?.uptime_seconds)} icon={Clock} />
-        <StatCard label="Inbounds" value={server.inbound_count ?? inbounds?.length ?? 0} icon={Boxes} />
-        <StatCard
-          label="Engines"
-          value={server.engines?.filter((e) => e.running).length ?? 0}
-          icon={RotateCw}
-          hint={`${server.engines?.length ?? 0} detected`}
-        />
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <MetricTile label="Uptime" value={formatUptime(stats?.uptime_seconds)} icon={Clock} />
+          <MetricTile label="Inbounds" value={server.inbound_count ?? inbounds?.length ?? 0} icon={EthernetPort} />
+          <MetricTile
+            label="Engines"
+            value={server.engines?.filter((e) => e.running).length ?? 0}
+            icon={CheckEngineIcon}
+            hint={`${server.engines?.length ?? 0} detected`}
+          />
+        </div>
       </div>
 
-      {/* Engines */}
+      {/* Engines: equal-width tiles */}
       {server.engines && server.engines.length > 0 && (
-        <div className="flex flex-wrap gap-3">
+        <div className="grid gap-3 sm:grid-cols-2">
           {server.engines.map((e) => (
-            <div key={e.engine} className="flex items-center gap-3 rounded-md border px-3 py-2">
+            <div key={e.engine} className="flex min-w-0 items-center gap-3 rounded-md border px-3 py-2">
               <EngineBadge engine={e.engine} running={e.running} />
-              <div className="text-xs text-muted-foreground">
+              <div className="min-w-0 truncate text-xs text-muted-foreground">
                 {e.version && <span className="font-mono">{e.version}</span>}
                 {e.version && e.service_name && ' · '}
                 {e.service_name && <span className="font-mono">{e.service_name}</span>}
@@ -442,74 +501,56 @@ function ServerCardDetail({
       {inboundsLoading || !inbounds ? (
         <Skeleton className="h-32" />
       ) : inbounds.length === 0 ? (
-        <EmptyState icon={Boxes} title="No inbounds yet" description="Add an inbound to expose a protocol." />
+        <EmptyState icon={EthernetPort} title="No inbounds yet" description="Add an inbound to expose a protocol." />
       ) : (
-        <div className="rounded-md border">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Tag</TableHead>
-                <TableHead>Protocol</TableHead>
-                <TableHead>Port</TableHead>
-                <TableHead>Clients</TableHead>
-                <TableHead>Enabled</TableHead>
-                <TableHead className="w-[1%] text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {inbounds.map((ib) => (
-                <TableRow key={ib.id}>
-                  <TableCell className="font-medium">
-                    {ib.tag}
-                    {ib.remark && (
-                      <span className="ml-2 text-xs font-normal text-muted-foreground">{ib.remark}</span>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    <ProtocolBadge protocol={ib.protocol} />
-                  </TableCell>
-                  <TableCell className="font-mono text-sm tabular-nums">{ib.port}</TableCell>
-                  <TableCell className="tabular-nums">{ib.client_count ?? 0}</TableCell>
-                  <TableCell>
-                    <Switch
-                      checked={ib.enabled}
-                      disabled={togglingId === ib.id}
-                      onCheckedChange={(v) => handleToggleInbound(ib, v)}
-                      aria-label="Toggle inbound"
-                    />
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon" className="h-8 w-8" aria-label="Inbound actions">
-                          <MoreVertical className="h-4 w-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem
-                          onSelect={() => {
-                            setEditingInbound(ib)
-                            setInboundFormOpen(true)
-                          }}
-                        >
-                          <Pencil className="h-4 w-4" />
-                          Edit
-                        </DropdownMenuItem>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem
-                          className="text-destructive focus:text-destructive"
-                          onSelect={() => setDeletingInbound(ib)}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                          Delete
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+        <div className="space-y-2">
+          {inbounds.map((ib) => (
+            <div key={ib.id} className="flex items-center gap-3 rounded-md border p-3">
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <span className="truncate font-medium">{ib.tag}</span>
+                  <ProtocolBadge protocol={ib.protocol} />
+                </div>
+                <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
+                  <span className="font-mono tabular-nums">:{ib.port}</span>
+                  <span className="tabular-nums">{ib.client_count ?? 0} clients</span>
+                  {ib.remark && <span className="truncate">{ib.remark}</span>}
+                </div>
+              </div>
+              <Switch
+                checked={ib.enabled}
+                disabled={togglingId === ib.id}
+                onCheckedChange={(v) => handleToggleInbound(ib, v)}
+                aria-label="Toggle inbound"
+              />
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" aria-label="Inbound actions">
+                    <MoreVertical className="h-4 w-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem
+                    onSelect={() => {
+                      setEditingInbound(ib)
+                      setInboundFormOpen(true)
+                    }}
+                  >
+                    <Pencil className="h-4 w-4" />
+                    Edit
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    className="text-destructive focus:text-destructive"
+                    onSelect={() => setDeletingInbound(ib)}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                    Delete
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+          ))}
         </div>
       )}
 
@@ -540,7 +581,7 @@ function ServerCardDetail({
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </CardContent>
+    </div>
   )
 }
 

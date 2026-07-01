@@ -27,8 +27,8 @@ export function AppLayout() {
     <div className="min-h-screen bg-background">
       {/* Top bar: title left, theme + sign out (icons only) right */}
       <header className="flex h-16 items-center justify-between px-4 sm:px-6">
-        <Link to="/" className="flex items-center gap-2">
-          <DisgustingLogo className="h-8 w-8" />
+        <Link to="/" className="flex items-center gap-3">
+          <DisgustingLogo className="h-11 w-11" />
           <span className="flex flex-col leading-none">
             <span className="text-lg font-semibold tracking-tight">Absolutely Disgusting Panel</span>
             <span className="mt-0.5 text-[11px] font-medium text-muted-foreground/70">v{APP_VERSION}</span>

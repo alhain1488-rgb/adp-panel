@@ -28,7 +28,7 @@ export default function ServersPage() {
             type="button"
             onClick={() => setCreateOpen(true)}
             aria-label="Add server"
-            className="flex min-h-[9rem] flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-border text-muted-foreground transition-colors hover:border-primary/50 hover:text-primary"
+            className="flex min-h-[7.5rem] flex-col items-center justify-center gap-2 self-stretch rounded-xl border-2 border-dashed border-border text-muted-foreground transition-colors hover:border-primary/50 hover:text-primary"
           >
             <Plus className="h-8 w-8" />
             <span className="text-sm font-medium">Add server</span>
