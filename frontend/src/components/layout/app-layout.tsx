@@ -28,16 +28,7 @@ export function AppLayout() {
       <header className="flex h-16 items-center justify-between px-4 sm:px-6">
         <Link to="/" className="flex items-center gap-2">
           <DisgustingLogo className="h-8 w-8" />
-          <span className="relative flex flex-col leading-none">
-            <span className="text-lg font-semibold tracking-tight">Absolutely Disgusting Panel</span>
-            {/* barely-visible easter egg — only noticeable if you look closely */}
-            <span
-              aria-hidden
-              className="pointer-events-none select-none text-[10px] font-semibold tracking-[0.35em] text-foreground/[0.055]"
-            >
-              ВЛАД - ЛОХ
-            </span>
-          </span>
+          <span className="text-lg font-semibold tracking-tight">Absolutely Disgusting Panel</span>
         </Link>
         <div className="flex items-center gap-1">
           <ThemeToggle />
@@ -73,6 +64,11 @@ export function AppLayout() {
           </NavLink>
         ))}
       </nav>
+
+      {/* corner easter egg */}
+      <span className="pointer-events-none fixed bottom-3 right-4 z-40 select-none text-[10px] font-semibold tracking-widest text-muted-foreground/40">
+        ВЛАД - ЛОХ
+      </span>
     </div>
   )
 }
