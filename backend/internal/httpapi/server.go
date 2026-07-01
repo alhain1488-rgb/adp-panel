@@ -13,6 +13,7 @@ import (
 	"github.com/go-chi/httprate"
 
 	"github.com/adp/panel/internal/auth"
+	"github.com/adp/panel/internal/servers"
 	"github.com/adp/panel/internal/store"
 )
 
@@ -21,6 +22,7 @@ type Deps struct {
 	DB      *sql.DB
 	Store   *store.Store
 	Auth    *auth.Service
+	Servers *servers.Service
 	Logger  *slog.Logger
 	Version string
 }
@@ -56,10 +58,27 @@ func Router(d Deps) http.Handler {
 		})
 	})
 
-	// Audit log (read) — protected.
+	sh := &serversHandler{svc: d.Servers, store: d.Store}
+
+	// Protected API.
 	r.Group(func(r chi.Router) {
 		r.Use(d.Auth.RequireAuth)
+
 		r.Get("/api/logs", ah.listLogs)
+
+		r.Route("/api/servers", func(r chi.Router) {
+			r.Get("/", sh.list)
+			r.Post("/", sh.create)
+			r.Route("/{id}", func(r chi.Router) {
+				r.Get("/", sh.get)
+				r.Put("/", sh.update)
+				r.Delete("/", sh.del)
+				r.Post("/check", sh.check)
+				r.Post("/install", sh.install)
+				r.Post("/restart-xray", sh.restart)
+				r.Get("/stats", sh.stats)
+			})
+		})
 	})
 
 	return r

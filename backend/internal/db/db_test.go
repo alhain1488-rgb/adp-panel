@@ -36,19 +36,29 @@ func TestOpen_Idempotent(t *testing.T) {
 	}
 	d1.Close()
 
-	// second open must not re-run migrations or fail
+	// second open must not re-run migrations or fail: count stays constant.
 	d2, err := Open(path)
 	if err != nil {
 		t.Fatalf("reopen: %v", err)
 	}
 	defer d2.Close()
 
-	var n int
-	if err := d2.QueryRow("SELECT COUNT(*) FROM schema_migrations").Scan(&n); err != nil {
+	var n2 int
+	if err := d2.QueryRow("SELECT COUNT(*) FROM schema_migrations").Scan(&n2); err != nil {
 		t.Fatal(err)
 	}
-	if n != 1 {
-		t.Errorf("schema_migrations count = %d, want 1", n)
+	// Re-open a third time to confirm idempotency across restarts.
+	d3, err := Open(path)
+	if err != nil {
+		t.Fatalf("reopen 3: %v", err)
+	}
+	defer d3.Close()
+	var n3 int
+	if err := d3.QueryRow("SELECT COUNT(*) FROM schema_migrations").Scan(&n3); err != nil {
+		t.Fatal(err)
+	}
+	if n2 == 0 || n2 != n3 {
+		t.Errorf("schema_migrations count not stable: %d then %d", n2, n3)
 	}
 }
 

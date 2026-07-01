@@ -32,8 +32,8 @@ func clientIP(r *http.Request) string {
 	return r.RemoteAddr
 }
 
-func (h *authHandler) audit(ctx context.Context, r *http.Request, adminID int64, action, targetType string, targetID int64, detail string) {
-	_ = h.store.InsertAuditLog(ctx, store.AuditLog{
+func recordAudit(ctx context.Context, st *store.Store, r *http.Request, adminID int64, action, targetType string, targetID int64, detail string) {
+	_ = st.InsertAuditLog(ctx, store.AuditLog{
 		AdminID:    adminID,
 		Action:     action,
 		TargetType: targetType,
@@ -42,6 +42,10 @@ func (h *authHandler) audit(ctx context.Context, r *http.Request, adminID int64,
 		IP:         clientIP(r),
 		UserAgent:  r.UserAgent(),
 	})
+}
+
+func (h *authHandler) audit(ctx context.Context, r *http.Request, adminID int64, action, targetType string, targetID int64, detail string) {
+	recordAudit(ctx, h.store, r, adminID, action, targetType, targetID, detail)
 }
 
 // --- DTOs (mirror docs/openapi.yaml) ---

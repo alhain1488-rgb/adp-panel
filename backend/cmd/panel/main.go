@@ -16,11 +16,13 @@ import (
 	"github.com/adp/panel/internal/db"
 	"github.com/adp/panel/internal/httpapi"
 	"github.com/adp/panel/internal/logging"
+	"github.com/adp/panel/internal/servers"
+	"github.com/adp/panel/internal/ssh"
 	"github.com/adp/panel/internal/store"
 )
 
 // version is the backend build version; kept in sync with the frontend APP_VERSION.
-const version = "0.4.0.0"
+const version = "0.5.0.0"
 
 func main() {
 	logger := logging.New()
@@ -47,6 +49,7 @@ func main() {
 
 	st := store.New(database)
 	authSvc := auth.NewService(st, cipher, auth.NewTokenManager(cfg.JWTSecret))
+	serversSvc := servers.NewService(st, cipher, ssh.NewDialer(), servers.NewIPAPIGeo())
 
 	seeded, err := authSvc.SeedAdmin(context.Background(), cfg.AdminUsername, cfg.AdminPassword)
 	if err != nil {
@@ -61,6 +64,7 @@ func main() {
 		DB:      database,
 		Store:   st,
 		Auth:    authSvc,
+		Servers: serversSvc,
 		Logger:  logger,
 		Version: version,
 	})

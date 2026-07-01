@@ -106,3 +106,28 @@ inbound с видимыми дефолтами и live-превью (в духе
 **Решение по слою данных:** взят рукописный `store` вместо `sqlc` — трение `sqlc`+`modernc`+SQLite на
 `DATETIME` (scan в `time.Time`) при малом объёме запросов; рукописный слой даёт контроль над
 сканированием и единый RFC3339-формат. SPEC §3 допускает альтернативу с обоснованием.
+
+## Фаза 4 — Управление серверами + провижининг ✅
+
+**Сделано:**
+- Миграция `0002` — аддитивная колонка `servers.engines_json` (кэш статуса движков, обновляется
+  при check/provision). CRUD `servers` в `store` (+ `ApplyCheck`, `SetProvision`); SSH-секреты
+  шифруются при сохранении, в DTO не отдаются.
+- `ssh` — `Runner`/`Dialer` за интерфейсом: реальная реализация на `golang.org/x/crypto/ssh`
+  (ключ/пароль, exec, stdin), мок в `ssh/sshtest` для юнит-тестов.
+- `provision` — автоустановка движков (SPEC §5.1): определение ОС (**только Debian/Ubuntu**,
+  иначе понятная ошибка без частичной установки), установка xray-core и sing-box, генерация
+  **self-signed** серта (`/etc/sing-box/self.crt`), идемпотентность (пропуск при наличии).
+- `servers.Service` — Create (шифрование + авто-провижининг в фоне), Get/List/Update/Delete,
+  Provision, Check (доступность + IP + гео [`ip-api`, за интерфейсом] + статус движков),
+  Stats (CPU/RAM/диск через `/proc` + `free`/`df`, парсер), RestartEngine.
+- `httpapi` — эндпоинты контракта: `GET/POST /api/servers`, `GET/PUT/DELETE /api/servers/{id}`,
+  `POST /check|/install|/restart-xray`, `GET /stats`; аудит на create/update/delete/check/install/restart.
+
+**Проверено:**
+- `go vet` ✓, `gofmt` ✓, `go test ./...` ✓ (провижининг: свежая установка/OS-gate/идемпотентность
+  на мок-раннере; сервис: шифрование секрета, dial-ошибка→status error, парсер метрик; HTTP:
+  CRUD, check→online+движки+IP, stats, provision→installed, guard 401).
+- Живой end-to-end (docker compose, v0.5.0.0): login→create (`installing`, секреты не в ответе)→
+  авто-провижининг к недоступной ноде корректно переходит в `failed` с текстом SSH-ошибки; list;
+  guard 401. Реальная установка движков будет проверена в Фазах 5–6 на dockerized-Debian-ноде.

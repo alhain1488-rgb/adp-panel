@@ -40,6 +40,7 @@ erDiagram
         string status
         string provision_status
         string provision_error
+        json engines_json
         datetime last_check_at
         datetime last_sync_at
         string last_sync_error
