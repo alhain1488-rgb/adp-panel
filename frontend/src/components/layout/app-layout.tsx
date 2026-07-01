@@ -66,7 +66,7 @@ export function AppLayout() {
       </nav>
 
       {/* corner easter egg */}
-      <span className="pointer-events-none fixed bottom-3 right-4 z-40 select-none text-[10px] font-semibold tracking-widest text-muted-foreground/40">
+      <span className="pointer-events-none fixed bottom-3 right-4 z-40 select-none text-[5px] font-medium tracking-wider text-muted-foreground/15">
         ВЛАД - ЛОХ
       </span>
     </div>
