@@ -80,5 +80,29 @@ inbound с видимыми дефолтами и live-превью (в духе
 
 **Отклонения от SPEC §3 (обоснование):** вместо `golang-migrate` — минимальный встроенный раннер
 (проще, без внешней зависимости и cgo, полностью покрывает «аддитивные миграции при старте»);
-драйвер `modernc.org/sqlite` вместо cgo-`mattn` (простые сборки/образы). `sqlc` вводится в Фазе 3
-вместе с первыми типобезопасными запросами (в Фазе 2 запросов ещё нет). Docker — через Colima (Q4).
+драйвер `modernc.org/sqlite` вместо cgo-`mattn` (простые сборки/образы). Docker — через Colima (Q4).
+
+## Фаза 3 — Аутентификация и аудит ✅
+
+**Сделано:**
+- `store` — **рукописный типизированный слой доступа** (вместо `sqlc`, см. ниже): модели/методы
+  для `admins` (get/create/count/set-TOTP) и `audit_logs` (insert/list/count); таймстампы —
+  RFC3339-строки, управляются в Go.
+- `auth` — логин по bcrypt; **JWT** (HS256, `golang-jwt/v5`) access-токен + короткоживущий
+  2FA-challenge-токен; **TOTP** (`pquerna/otp`): setup (otpauth-URL + QR через `skip2/go-qrcode`),
+  enable, verify — секрет хранится **зашифрованным** (AES-GCM); middleware `RequireAuth`
+  (bearer → admin в контексте). Первичный админ сидится из env при первом старте.
+- `httpapi` — эндпоинты контракта: `POST /api/auth/login` (→ `need_2fa`/`tokens`/`challenge_id`),
+  `/2fa/verify`, `/2fa/setup`, `/2fa/enable`, `/logout`, `GET /api/auth/me`; `GET /api/logs`
+  (пагинация). **Rate-limit** на login/verify (`go-chi/httprate`, 15/мин/IP). Аудит пишется на
+  login/2fa.enable/logout.
+
+**Проверено:**
+- `go vet` ✓, `gofmt` ✓, `go test ./...` ✓ (login успех/провал, `/me` с токеном/без, **полный цикл
+  TOTP** setup→enable→login-с-2FA→verify, bad-code, аудит-запись, `/api/logs` + требование авторизации).
+- Живой end-to-end (curl): сид админа из env, login→JWT, wrong→401, `/me` 200, `2fa/setup`→otpauth+секрет,
+  `/api/logs`→запись login (detail-объект, IP, UA, RFC3339). Swagger UI появится в Фазе 7.
+
+**Решение по слою данных:** взят рукописный `store` вместо `sqlc` — трение `sqlc`+`modernc`+SQLite на
+`DATETIME` (scan в `time.Time`) при малом объёме запросов; рукописный слой даёт контроль над
+сканированием и единый RFC3339-формат. SPEC §3 допускает альтернативу с обоснованием.

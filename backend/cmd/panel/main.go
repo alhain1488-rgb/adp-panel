@@ -10,14 +10,17 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/adp/panel/internal/auth"
 	"github.com/adp/panel/internal/config"
+	"github.com/adp/panel/internal/crypto"
 	"github.com/adp/panel/internal/db"
 	"github.com/adp/panel/internal/httpapi"
 	"github.com/adp/panel/internal/logging"
+	"github.com/adp/panel/internal/store"
 )
 
 // version is the backend build version; kept in sync with the frontend APP_VERSION.
-const version = "0.3.0.0"
+const version = "0.4.0.0"
 
 func main() {
 	logger := logging.New()
@@ -36,7 +39,31 @@ func main() {
 	defer database.Close()
 	logger.Info("database ready", "path", cfg.DBPath)
 
-	handler := httpapi.Router(httpapi.Deps{DB: database, Logger: logger, Version: version})
+	cipher, err := crypto.NewCipher(cfg.EncryptionKey)
+	if err != nil {
+		logger.Error("crypto init error", "err", err)
+		os.Exit(1)
+	}
+
+	st := store.New(database)
+	authSvc := auth.NewService(st, cipher, auth.NewTokenManager(cfg.JWTSecret))
+
+	seeded, err := authSvc.SeedAdmin(context.Background(), cfg.AdminUsername, cfg.AdminPassword)
+	if err != nil {
+		logger.Error("admin seed error", "err", err)
+		os.Exit(1)
+	}
+	if seeded {
+		logger.Info("initial admin created", "username", cfg.AdminUsername)
+	}
+
+	handler := httpapi.Router(httpapi.Deps{
+		DB:      database,
+		Store:   st,
+		Auth:    authSvc,
+		Logger:  logger,
+		Version: version,
+	})
 	srv := httpapi.NewServer(cfg.HTTPAddr, handler)
 
 	// Run the server until a termination signal arrives.
