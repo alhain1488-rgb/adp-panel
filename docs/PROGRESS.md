@@ -49,3 +49,36 @@
 
 > **СТОП.** Ожидается ревью человеком: посмотреть фронт, поправить UI/UX. Дальше (Фаза 2, backend) —
 > только после одобрения.
+
+**Правки по итогам ревью (Фаза 1):** одностраничный UI серверов (карточки раскрываются на месте,
+без сайдбара и дашборда; Клиенты/Логи/Настройки — иконки внизу слева; тема/выход — иконки вверху
+справа); темы серо-оранжевая + папирусная; контраст статус-индикаторов; автоустановка движков при
+добавлении сервера (провижининг, +контракт `/install` и `provision_status`); структурированная форма
+inbound с видимыми дефолтами и live-превью (в духе 3x-ui) + поля Hysteria2/sing-box для сервера;
+рандомный SNI из пула 10 доменов; лого = мем «ЧЕРЕМША»; версия приложения под заголовком
+(`frontend/src/version.ts`, правило автобампа — CLAUDE.md §11).
+
+## Фаза 2 — Фундамент backend ✅
+
+**Сделано:**
+- `config` — чтение/валидация env; обязательные `PANEL_ENCRYPTION_KEY` (32 байта base64),
+  `PANEL_JWT_SECRET`, `PANEL_ADMIN_PASSWORD` — падение с понятной ошибкой при отсутствии;
+  остальное с дефолтами; вывод `SubBaseURL` из домена.
+- `crypto` — AES-256-GCM (`Encrypt`/`Decrypt`, случайный nonce, аутентификация) и bcrypt (cost 12).
+- `db` + `migrations` — SQLite через **modernc.org/sqlite** (pure-Go, без cgo); встроенный раннер
+  миграций (embed FS, таблица `schema_migrations`, транзакция на миграцию, идемпотентно); схема
+  `0001_init` из SPEC §4 (все таблицы + provision/hysteria-поля); FK включены (pragma).
+- `logging` — slog JSON. `httpapi` — chi-роутер, middleware, `/healthz`, `/readyz` (проверка БД).
+- `cmd/panel` — старт с graceful shutdown. `backend/Dockerfile` (multi-stage, CGO_ENABLED=0,
+  alpine, non-root). `docker-compose.yml` (backend + volume, healthcheck).
+
+**Проверено:**
+- `go vet ./...` ✓, `gofmt -l .` пусто ✓, `go test ./...` ✓ (config: valid/missing/bad-key;
+  crypto: round-trip/wrong-key/tamper/bcrypt; db: миграции/идемпотентность/FK; httpapi: health).
+- Локальный запуск бинарника: `/healthz`,`/readyz` → 200, БД мигрирует.
+- **`docker compose up --build`** → контейнер **healthy**, миграции применены, `curl /healthz` → 200.
+
+**Отклонения от SPEC §3 (обоснование):** вместо `golang-migrate` — минимальный встроенный раннер
+(проще, без внешней зависимости и cgo, полностью покрывает «аддитивные миграции при старте»);
+драйвер `modernc.org/sqlite` вместо cgo-`mattn` (простые сборки/образы). `sqlc` вводится в Фазе 3
+вместе с первыми типобезопасными запросами (в Фазе 2 запросов ещё нет). Docker — через Colima (Q4).
