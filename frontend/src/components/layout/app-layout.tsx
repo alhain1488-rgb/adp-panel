@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { ThemeToggle } from './theme-toggle'
 import { DisgustingLogo } from './logo'
 import { useAuth } from '@/auth/auth-context'
+import { APP_VERSION } from '@/version'
 
 const bottomNav = [
   { to: '/', label: 'Servers', icon: Server, end: true },
@@ -28,7 +29,10 @@ export function AppLayout() {
       <header className="flex h-16 items-center justify-between px-4 sm:px-6">
         <Link to="/" className="flex items-center gap-2">
           <DisgustingLogo className="h-8 w-8" />
-          <span className="text-lg font-semibold tracking-tight">Absolutely Disgusting Panel</span>
+          <span className="flex flex-col leading-none">
+            <span className="text-lg font-semibold tracking-tight">Absolutely Disgusting Panel</span>
+            <span className="mt-0.5 text-[11px] font-medium text-muted-foreground/70">v{APP_VERSION}</span>
+          </span>
         </Link>
         <div className="flex items-center gap-1">
           <ThemeToggle />
