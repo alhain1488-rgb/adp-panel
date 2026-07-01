@@ -1,0 +1,36 @@
+{
+  "permissions": {
+    "defaultMode": "bypassPermissions",
+    "allow": [
+      "Read",
+      "Glob",
+      "Grep",
+      "Bash",
+      "Bash(ssh:*)",
+      "Bash(scp:*)",
+      "Bash(sudo:*)",
+      "Bash(rsync:*)",
+      "Bash(make:*)",
+      "Bash(go:*)",
+      "Bash(gofmt:*)",
+      "Bash(golangci-lint:*)",
+      "Bash(sqlc:*)",
+      "Bash(migrate:*)",
+      "Bash(swag:*)",
+      "Bash(npm:*)",
+      "Bash(npx:*)",
+      "Bash(vitest:*)",
+      "Bash(git:*)",
+      "Bash(docker:*)",
+      "Bash(docker compose:*)",
+      "Bash(mkdir:*)",
+      "Bash(cp:*)",
+      "Bash(mv:*)",
+      "Bash(rm:*)",
+      "Bash(sqlite3:*)",
+      "Bash(curl:*)"
+    ],
+    "ask": [],
+    "deny": []
+  }
+}

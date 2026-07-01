@@ -1,0 +1,41 @@
+# Secrets & local env
+.env
+.env.local
+*.pem
+*.key
+id_rsa*
+deploy/vps/*.secret
+
+# Go
+/backend/bin/
+*.test
+*.out
+coverage.*
+
+# Node / frontend
+node_modules/
+frontend/dist/
+frontend/.vite/
+*.log
+npm-debug.log*
+
+# SQLite runtime data
+*.db
+*.db-shm
+*.db-wal
+/data/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# Build artifacts
+/dist/
+/tmp/
+
+# Claude Code runtime
+.claude/scheduled_tasks.lock
+.claude/settings.local.json
