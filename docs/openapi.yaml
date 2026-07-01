@@ -886,6 +886,10 @@ components:
           type: string
         xray_service_name:
           type: string
+        hysteria_config_path:
+          type: string
+        hysteria_service_name:
+          type: string
         ip:
           type: string
         geo_country:
@@ -955,6 +959,12 @@ components:
         xray_service_name:
           type: string
           default: xray
+        hysteria_config_path:
+          type: string
+          default: /etc/sing-box/config.json
+        hysteria_service_name:
+          type: string
+          default: sing-box
 
     ServerStats:
       type: object

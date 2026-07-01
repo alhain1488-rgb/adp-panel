@@ -28,6 +28,8 @@ export interface Server {
   ssh_auth_method: SshAuthMethod;
   xray_config_path?: string;
   xray_service_name?: string;
+  hysteria_config_path?: string;
+  hysteria_service_name?: string;
   ip?: string;
   geo_country?: string;
   geo_city?: string;
@@ -255,6 +257,8 @@ export const servers: Server[] = [
 servers.forEach((s) => {
   s.provision_status = 'installed';
   s.provision_error = null;
+  s.hysteria_config_path = s.hysteria_config_path ?? '/etc/sing-box/config.json';
+  s.hysteria_service_name = s.hysteria_service_name ?? 'sing-box';
 });
 
 // ---------------------------------------------------------------- Inbounds

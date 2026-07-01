@@ -1,11 +1,11 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
-import { Textarea } from '@/components/ui/textarea'
 import { Separator } from '@/components/ui/separator'
+import { Checkbox } from '@/components/ui/checkbox'
 import {
   Dialog,
   DialogContent,
@@ -18,16 +18,37 @@ import { useToast } from '@/components/ui/use-toast'
 import { useCreateInbound, useUpdateInbound } from '@/api/hooks'
 import { PROTOCOL_LABELS } from '@/api/types'
 import type { Inbound, InboundInput, Protocol } from '@/api/types'
-import { cn } from '@/lib/utils'
-
-const PROTOCOLS = Object.keys(PROTOCOL_LABELS) as Protocol[]
+import {
+  buildConfig,
+  emptyForm,
+  FINGERPRINTS,
+  NETWORKS,
+  parseInbound,
+  protocolDefaults,
+  securitiesFor,
+  SNIFF_OVERRIDES,
+  SS_METHODS,
+  VMESS_CIPHERS,
+  type InboundForm,
+  type Network,
+  type Security,
+} from './inbound-defaults'
 
 const selectClass =
   'flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50'
 
-function stringifyJson(value?: Record<string, unknown>): string {
-  if (!value || Object.keys(value).length === 0) return ''
-  return JSON.stringify(value, null, 2)
+function Field({ label, htmlFor, hint, children }: { label: string; htmlFor?: string; hint?: string; children: React.ReactNode }) {
+  return (
+    <div className="space-y-1.5">
+      <Label htmlFor={htmlFor}>{label}</Label>
+      {children}
+      {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
+    </div>
+  )
+}
+
+function SectionTitle({ children }: { children: React.ReactNode }) {
+  return <p className="text-sm font-semibold">{children}</p>
 }
 
 export function InboundFormDialog({
@@ -46,75 +67,58 @@ export function InboundFormDialog({
   const createInbound = useCreateInbound(serverId)
   const updateInbound = useUpdateInbound(serverId)
 
-  const [tag, setTag] = useState('')
-  const [protocol, setProtocol] = useState<Protocol>('vless')
-  const [listen, setListen] = useState('0.0.0.0')
-  const [port, setPort] = useState('')
-  const [remark, setRemark] = useState('')
-  const [enabled, setEnabled] = useState(true)
-  const [settingsText, setSettingsText] = useState('')
-  const [streamText, setStreamText] = useState('')
-  const [settingsError, setSettingsError] = useState<string | null>(null)
-  const [streamError, setStreamError] = useState<string | null>(null)
+  const [form, setForm] = useState<InboundForm>(emptyForm())
 
   useEffect(() => {
     if (!open) return
-    setTag(inbound?.tag ?? '')
-    setProtocol(inbound?.protocol ?? 'vless')
-    setListen(inbound?.listen ?? '0.0.0.0')
-    setPort(inbound?.port != null ? String(inbound.port) : '')
-    setRemark(inbound?.remark ?? '')
-    setEnabled(inbound?.enabled ?? true)
-    setSettingsText(stringifyJson(inbound?.settings))
-    setStreamText(stringifyJson(inbound?.stream_settings))
-    setSettingsError(null)
-    setStreamError(null)
+    if (inbound) {
+      const base: InboundForm = {
+        ...emptyForm(),
+        tag: inbound.tag,
+        protocol: inbound.protocol,
+        listen: inbound.listen ?? '0.0.0.0',
+        port: inbound.port != null ? String(inbound.port) : '',
+        remark: inbound.remark ?? '',
+        enabled: inbound.enabled ?? true,
+      }
+      setForm(parseInbound(base, inbound.settings, inbound.stream_settings, inbound.sniffing))
+    } else {
+      setForm({ ...emptyForm(), ...protocolDefaults('vless') })
+    }
   }, [open, inbound])
 
-  const pending = createInbound.isPending || updateInbound.isPending
+  const patch = (p: Partial<InboundForm>) => setForm((f) => ({ ...f, ...p }))
 
-  function parseJson(text: string): Record<string, unknown> | undefined {
-    const trimmed = text.trim()
-    if (!trimmed) return undefined
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const parsed = JSON.parse(trimmed) as any
-    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
-      throw new Error('Expected a JSON object')
-    }
-    return parsed as Record<string, unknown>
+  function changeProtocol(protocol: Protocol) {
+    const defaults = protocolDefaults(protocol)
+    const secs = securitiesFor(protocol)
+    setForm((f) => ({
+      ...f,
+      protocol,
+      ...defaults,
+      security: secs.length ? (defaults.security ?? secs[0]) : f.security,
+    }))
   }
+
+  const preview = useMemo(() => JSON.stringify(buildConfig(form), null, 2), [form])
+  const pending = createInbound.isPending || updateInbound.isPending
+  const isXray = form.protocol === 'vless' || form.protocol === 'vmess' || form.protocol === 'trojan'
+  const securities = securitiesFor(form.protocol)
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    setSettingsError(null)
-    setStreamError(null)
-
-    let settings: Record<string, unknown> | undefined
-    let stream_settings: Record<string, unknown> | undefined
-    try {
-      settings = parseJson(settingsText)
-    } catch (err) {
-      setSettingsError(err instanceof Error ? err.message : 'Invalid JSON')
-      return
-    }
-    try {
-      stream_settings = parseJson(streamText)
-    } catch (err) {
-      setStreamError(err instanceof Error ? err.message : 'Invalid JSON')
-      return
-    }
-
+    const { settings, stream_settings, sniffing } = buildConfig(form)
     const input: InboundInput = {
-      tag: tag.trim(),
-      protocol,
-      listen: listen.trim() || '0.0.0.0',
-      port: Number(port),
-      remark: remark.trim() || undefined,
-      enabled,
+      tag: form.tag.trim(),
+      protocol: form.protocol,
+      listen: form.listen.trim() || '0.0.0.0',
+      port: Number(form.port),
+      remark: form.remark.trim() || undefined,
+      enabled: form.enabled,
       settings,
       stream_settings,
+      sniffing,
     }
-
     try {
       if (isEdit && inbound) {
         await updateInbound.mutateAsync({ id: inbound.id, input })
@@ -135,121 +139,278 @@ export function InboundFormDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
-        <form onSubmit={handleSubmit} className="space-y-4">
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
+        <form onSubmit={handleSubmit} className="space-y-5">
           <DialogHeader>
             <DialogTitle>{isEdit ? 'Edit inbound' : 'Add inbound'}</DialogTitle>
             <DialogDescription>
-              {isEdit ? 'Update this inbound configuration.' : 'Create a new inbound on this server.'}
+              Fields are pre-filled with sensible defaults. Reality keys and client credentials are
+              generated by the backend.
             </DialogDescription>
           </DialogHeader>
 
+          {/* Basics */}
           <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="ib-tag">Tag</Label>
-              <Input
-                id="ib-tag"
-                value={tag}
-                onChange={(e) => setTag(e.target.value)}
-                placeholder="vless-reality"
-                required
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="ib-protocol">Protocol</Label>
-              <select
-                id="ib-protocol"
-                className={selectClass}
-                value={protocol}
-                onChange={(e) => setProtocol(e.target.value as Protocol)}
-              >
-                {PROTOCOLS.map((p) => (
+            <Field label="Tag" htmlFor="ib-tag">
+              <Input id="ib-tag" value={form.tag} onChange={(e) => patch({ tag: e.target.value })} placeholder="vless-reality" required />
+            </Field>
+            <Field label="Protocol" htmlFor="ib-protocol">
+              <select id="ib-protocol" className={selectClass} value={form.protocol} onChange={(e) => changeProtocol(e.target.value as Protocol)}>
+                {(Object.keys(PROTOCOL_LABELS) as Protocol[]).map((p) => (
                   <option key={p} value={p}>
                     {PROTOCOL_LABELS[p]}
                   </option>
                 ))}
               </select>
+            </Field>
+            <Field label="Listen" htmlFor="ib-listen" hint="Blank / 0.0.0.0 = all interfaces">
+              <Input id="ib-listen" value={form.listen} onChange={(e) => patch({ listen: e.target.value })} placeholder="0.0.0.0" />
+            </Field>
+            <Field label="Port" htmlFor="ib-port">
+              <Input id="ib-port" type="number" min={1} max={65535} value={form.port} onChange={(e) => patch({ port: e.target.value })} placeholder="443" required />
+            </Field>
+            <Field label="Remark" htmlFor="ib-remark">
+              <Input id="ib-remark" value={form.remark} onChange={(e) => patch({ remark: e.target.value })} placeholder="Optional label" />
+            </Field>
+            <div className="flex items-end">
+              <div className="flex w-full items-center justify-between rounded-md border px-3 py-2">
+                <Label htmlFor="ib-enabled">Enabled</Label>
+                <Switch id="ib-enabled" checked={form.enabled} onCheckedChange={(v) => patch({ enabled: v })} />
+              </div>
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="ib-listen">Listen</Label>
-              <Input
-                id="ib-listen"
-                value={listen}
-                onChange={(e) => setListen(e.target.value)}
-                placeholder="0.0.0.0"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="ib-port">Port</Label>
-              <Input
-                id="ib-port"
-                type="number"
-                min={1}
-                max={65535}
-                value={port}
-                onChange={(e) => setPort(e.target.value)}
-                placeholder="443"
-                required
-              />
-            </div>
-          </div>
+          {/* Transport + security (xray protocols) */}
+          {isXray && (
+            <>
+              <Separator />
+              <SectionTitle>Transport &amp; security</SectionTitle>
+              <div className="grid grid-cols-2 gap-4">
+                <Field label="Network (transport)" htmlFor="ib-network">
+                  <select id="ib-network" className={selectClass} value={form.network} onChange={(e) => patch({ network: e.target.value as Network })}>
+                    {NETWORKS.map((n) => (
+                      <option key={n} value={n}>
+                        {n}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+                <Field label="Security" htmlFor="ib-security">
+                  <select id="ib-security" className={selectClass} value={form.security} onChange={(e) => patch({ security: e.target.value as Security })}>
+                    {securities.map((s) => (
+                      <option key={s} value={s}>
+                        {s}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
 
-          <div className="space-y-2">
-            <Label htmlFor="ib-remark">Remark</Label>
-            <Input
-              id="ib-remark"
-              value={remark}
-              onChange={(e) => setRemark(e.target.value)}
-              placeholder="Optional label"
-            />
-          </div>
+                {form.protocol === 'vless' && (
+                  <Field label="Flow" htmlFor="ib-flow">
+                    <select id="ib-flow" className={selectClass} value={form.flow} onChange={(e) => patch({ flow: e.target.value })}>
+                      <option value="">none</option>
+                      <option value="xtls-rprx-vision">xtls-rprx-vision</option>
+                    </select>
+                  </Field>
+                )}
+                {form.protocol === 'vmess' && (
+                  <Field label="Cipher" htmlFor="ib-cipher">
+                    <select id="ib-cipher" className={selectClass} value={form.vmessCipher} onChange={(e) => patch({ vmessCipher: e.target.value })}>
+                      {VMESS_CIPHERS.map((c) => (
+                        <option key={c} value={c}>
+                          {c}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+                )}
+              </div>
 
-          <div className="flex items-center justify-between rounded-md border p-3">
-            <div>
-              <Label htmlFor="ib-enabled">Enabled</Label>
-              <p className="text-xs text-muted-foreground">Serve this inbound to clients.</p>
-            </div>
-            <Switch id="ib-enabled" checked={enabled} onCheckedChange={setEnabled} />
-          </div>
+              {/* Transport-specific */}
+              {(form.network === 'ws' || form.network === 'httpupgrade' || form.network === 'xhttp') && (
+                <div className="grid grid-cols-2 gap-4">
+                  <Field label="Path" htmlFor="ib-path">
+                    <Input id="ib-path" value={form.path} onChange={(e) => patch({ path: e.target.value })} placeholder="/" />
+                  </Field>
+                  <Field label="Host" htmlFor="ib-host" hint="Host header (optional)">
+                    <Input id="ib-host" value={form.host} onChange={(e) => patch({ host: e.target.value })} placeholder="example.com" />
+                  </Field>
+                </div>
+              )}
+              {form.network === 'grpc' && (
+                <div className="grid grid-cols-2 gap-4">
+                  <Field label="gRPC serviceName" htmlFor="ib-grpc">
+                    <Input id="ib-grpc" value={form.grpcServiceName} onChange={(e) => patch({ grpcServiceName: e.target.value })} placeholder="grpc" />
+                  </Field>
+                  <div className="flex items-end">
+                    <div className="flex w-full items-center justify-between rounded-md border px-3 py-2">
+                      <Label htmlFor="ib-multimode">Multi mode</Label>
+                      <Switch id="ib-multimode" checked={form.grpcMultiMode} onCheckedChange={(v) => patch({ grpcMultiMode: v })} />
+                    </div>
+                  </div>
+                </div>
+              )}
+              {form.network === 'tcp' && (
+                <Field label="TCP header type" htmlFor="ib-tcphdr">
+                  <select id="ib-tcphdr" className={selectClass} value={form.tcpHeaderType} onChange={(e) => patch({ tcpHeaderType: e.target.value as 'none' | 'http' })}>
+                    <option value="none">none</option>
+                    <option value="http">http (camouflage)</option>
+                  </select>
+                </Field>
+              )}
 
-          <Separator />
+              {/* Security-specific */}
+              {form.security === 'tls' && (
+                <div className="grid grid-cols-2 gap-4">
+                  <Field label="SNI (serverName)" htmlFor="ib-sni">
+                    <Input id="ib-sni" value={form.sni} onChange={(e) => patch({ sni: e.target.value })} placeholder="example.com" />
+                  </Field>
+                  <Field label="ALPN" htmlFor="ib-alpn" hint="Comma separated">
+                    <Input id="ib-alpn" value={form.alpn} onChange={(e) => patch({ alpn: e.target.value })} placeholder="h2,http/1.1" />
+                  </Field>
+                  <Field label="Fingerprint (uTLS)" htmlFor="ib-fp">
+                    <select id="ib-fp" className={selectClass} value={form.fingerprint} onChange={(e) => patch({ fingerprint: e.target.value })}>
+                      {FINGERPRINTS.map((fp) => (
+                        <option key={fp} value={fp}>
+                          {fp}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+                </div>
+              )}
+              {form.security === 'reality' && (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <Field label="Dest (target)" htmlFor="ib-rdest">
+                      <Input id="ib-rdest" value={form.realityDest} onChange={(e) => patch({ realityDest: e.target.value })} placeholder="www.microsoft.com:443" />
+                    </Field>
+                    <Field label="Server names (SNI)" htmlFor="ib-rsni" hint="Comma separated">
+                      <Input id="ib-rsni" value={form.realityServerNames} onChange={(e) => patch({ realityServerNames: e.target.value })} placeholder="www.microsoft.com" />
+                    </Field>
+                    <Field label="Fingerprint" htmlFor="ib-rfp">
+                      <select id="ib-rfp" className={selectClass} value={form.fingerprint} onChange={(e) => patch({ fingerprint: e.target.value })}>
+                        {FINGERPRINTS.map((fp) => (
+                          <option key={fp} value={fp}>
+                            {fp}
+                          </option>
+                        ))}
+                      </select>
+                    </Field>
+                    <Field label="SpiderX" htmlFor="ib-spx">
+                      <Input id="ib-spx" value={form.realitySpiderX} onChange={(e) => patch({ realitySpiderX: e.target.value })} placeholder="/" />
+                    </Field>
+                    <Field label="Short IDs" htmlFor="ib-rsid" hint="Comma separated — leave blank to auto-generate">
+                      <Input id="ib-rsid" value={form.realityShortIds} onChange={(e) => patch({ realityShortIds: e.target.value })} placeholder="auto" />
+                    </Field>
+                  </div>
+                  <p className="rounded-md border border-primary/30 bg-primary/5 p-2 text-xs text-muted-foreground">
+                    Reality keypair (private/public key) is generated on the backend when the inbound is saved.
+                  </p>
+                </div>
+              )}
+            </>
+          )}
 
-          <div className="space-y-3">
-            <div>
-              <p className="text-sm font-medium">Advanced (settings JSON)</p>
-              <p className="text-xs text-muted-foreground">
-                Reality keys and client identifiers are generated by the backend — leave those out.
+          {/* Shadowsocks */}
+          {form.protocol === 'shadowsocks' && (
+            <>
+              <Separator />
+              <SectionTitle>Shadowsocks</SectionTitle>
+              <div className="grid grid-cols-2 gap-4">
+                <Field label="Method" htmlFor="ib-ssm">
+                  <select id="ib-ssm" className={selectClass} value={form.ssMethod} onChange={(e) => patch({ ssMethod: e.target.value })}>
+                    {SS_METHODS.map((m) => (
+                      <option key={m} value={m}>
+                        {m}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+                <Field label="Network" htmlFor="ib-ssn">
+                  <select id="ib-ssn" className={selectClass} value={form.ssNetwork} onChange={(e) => patch({ ssNetwork: e.target.value })}>
+                    <option value="tcp,udp">tcp,udp</option>
+                    <option value="tcp">tcp</option>
+                    <option value="udp">udp</option>
+                  </select>
+                </Field>
+              </div>
+            </>
+          )}
+
+          {/* Hysteria2 (sing-box) */}
+          {form.protocol === 'hysteria2' && (
+            <>
+              <Separator />
+              <SectionTitle>Hysteria2 (sing-box)</SectionTitle>
+              <div className="grid grid-cols-2 gap-4">
+                <Field label="Up (mbps)" htmlFor="ib-hyup">
+                  <Input id="ib-hyup" type="number" min={0} value={form.hyUp} onChange={(e) => patch({ hyUp: e.target.value })} />
+                </Field>
+                <Field label="Down (mbps)" htmlFor="ib-hydown">
+                  <Input id="ib-hydown" type="number" min={0} value={form.hyDown} onChange={(e) => patch({ hyDown: e.target.value })} />
+                </Field>
+                <Field label="Obfs" htmlFor="ib-hyobfs">
+                  <select id="ib-hyobfs" className={selectClass} value={form.hyObfsType} onChange={(e) => patch({ hyObfsType: e.target.value as 'none' | 'salamander' })}>
+                    <option value="none">none</option>
+                    <option value="salamander">salamander</option>
+                  </select>
+                </Field>
+                {form.hyObfsType === 'salamander' && (
+                  <Field label="Obfs password" htmlFor="ib-hyobfspw" hint="Blank = generated">
+                    <Input id="ib-hyobfspw" value={form.hyObfsPassword} onChange={(e) => patch({ hyObfsPassword: e.target.value })} />
+                  </Field>
+                )}
+                <Field label="SNI" htmlFor="ib-hysni">
+                  <Input id="ib-hysni" value={form.sni} onChange={(e) => patch({ sni: e.target.value })} placeholder="node hostname" />
+                </Field>
+                <div className="flex items-end">
+                  <div className="flex w-full items-center justify-between rounded-md border px-3 py-2">
+                    <Label htmlFor="ib-hyinsecure">TLS insecure (self-signed)</Label>
+                    <Switch id="ib-hyinsecure" checked={form.hyInsecure} onCheckedChange={(v) => patch({ hyInsecure: v })} />
+                  </div>
+                </div>
+              </div>
+              <p className="rounded-md border border-primary/30 bg-primary/5 p-2 text-xs text-muted-foreground">
+                Authentication uses each client's generated password. TLS cert is created on the node
+                during provisioning.
               </p>
+            </>
+          )}
+
+          {/* Sniffing */}
+          <Separator />
+          <div className="flex items-center justify-between">
+            <SectionTitle>Sniffing</SectionTitle>
+            <Switch checked={form.sniffEnabled} onCheckedChange={(v) => patch({ sniffEnabled: v })} aria-label="Sniffing enabled" />
+          </div>
+          {form.sniffEnabled && (
+            <div className="flex flex-wrap gap-4">
+              {SNIFF_OVERRIDES.map((o) => (
+                <label key={o} className="flex items-center gap-2 text-sm">
+                  <Checkbox
+                    checked={form.sniffOverrides.includes(o)}
+                    onCheckedChange={(v) =>
+                      patch({
+                        sniffOverrides: v
+                          ? [...form.sniffOverrides, o]
+                          : form.sniffOverrides.filter((x) => x !== o),
+                      })
+                    }
+                  />
+                  {o}
+                </label>
+              ))}
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="ib-settings">settings</Label>
-              <Textarea
-                id="ib-settings"
-                value={settingsText}
-                onChange={(e) => setSettingsText(e.target.value)}
-                placeholder='{ "decryption": "none" }'
-                rows={5}
-                className={cn('font-mono text-xs', settingsError && 'border-destructive')}
-                spellCheck={false}
-              />
-              {settingsError && <p className="text-xs text-destructive">{settingsError}</p>}
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="ib-stream">stream_settings</Label>
-              <Textarea
-                id="ib-stream"
-                value={streamText}
-                onChange={(e) => setStreamText(e.target.value)}
-                placeholder='{ "network": "tcp", "security": "reality" }'
-                rows={5}
-                className={cn('font-mono text-xs', streamError && 'border-destructive')}
-                spellCheck={false}
-              />
-              {streamError && <p className="text-xs text-destructive">{streamError}</p>}
-            </div>
+          )}
+
+          {/* Live preview of the generated config */}
+          <Separator />
+          <div className="space-y-1.5">
+            <SectionTitle>Generated config (preview)</SectionTitle>
+            <pre className="max-h-56 overflow-auto rounded-md border bg-muted/40 p-3 font-mono text-[11px] leading-relaxed">
+              {preview}
+            </pre>
           </div>
 
           <DialogFooter>

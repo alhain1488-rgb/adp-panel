@@ -207,9 +207,9 @@ erDiagram
   path для ws/grpc; для Hysteria2 — obfs, up/down, TLS-настройки), живёт в `settings_json` /
   `stream_settings_json`. Добавление протокола не требует ALTER TABLE. Целевой движок inbound-а
   определяется его протоколом через реестр (§5), а не отдельной колонкой.
-- **`servers`** — поля `xray_config_path`/`xray_service_name` обслуживают Xray-движок. Пути/имена
-  сервисов для движка Hysteria2 задаются дефолтами реестра/движка и при необходимости переопределяются
-  в `settings_json` inbound-а или в `settings` — **без изменения схемы**. `status`, `last_check_at`,
+- **`servers`** — поля `xray_config_path`/`xray_service_name` обслуживают Xray-движок,
+  `hysteria_config_path`/`hysteria_service_name` — движок Hysteria2 (sing-box); заданы дефолтами
+  (`/etc/sing-box/config.json`, `sing-box`) и переопределяются в форме сервера. `status`, `last_check_at`,
   `last_sync_at`, `last_sync_error` обслуживают дашборд и журнал синхронизаций. `ip/geo_*` кэшируются
   при проверке доступности.
 - **`clients`** — генерим при создании: `uuid` (для протоколов на UUID: VLESS/VMess) и `password`

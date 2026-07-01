@@ -150,6 +150,8 @@ export const handlers = [
       ssh_auth_method: input.ssh_auth_method ?? 'key',
       xray_config_path: input.xray_config_path ?? '/usr/local/etc/xray/config.json',
       xray_service_name: input.xray_service_name ?? 'xray',
+      hysteria_config_path: input.hysteria_config_path ?? '/etc/sing-box/config.json',
+      hysteria_service_name: input.hysteria_service_name ?? 'sing-box',
       ip: undefined,
       geo_country: undefined,
       geo_city: undefined,
@@ -187,6 +189,8 @@ export const handlers = [
       ssh_auth_method: input.ssh_auth_method ?? srv.ssh_auth_method,
       xray_config_path: input.xray_config_path ?? srv.xray_config_path,
       xray_service_name: input.xray_service_name ?? srv.xray_service_name,
+      hysteria_config_path: input.hysteria_config_path ?? srv.hysteria_config_path,
+      hysteria_service_name: input.hysteria_service_name ?? srv.hysteria_service_name,
       updated_at: new Date().toISOString(),
     })
     return json(srv)

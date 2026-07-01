@@ -31,6 +31,8 @@ erDiagram
         string ssh_passphrase_enc
         string xray_config_path
         string xray_service_name
+        string hysteria_config_path
+        string hysteria_service_name
         string ip
         string geo_country
         string geo_city

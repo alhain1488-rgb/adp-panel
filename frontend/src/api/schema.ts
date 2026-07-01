@@ -1508,6 +1508,8 @@ export interface components {
             ssh_auth_method: "password" | "key";
             xray_config_path?: string;
             xray_service_name?: string;
+            hysteria_config_path?: string;
+            hysteria_service_name?: string;
             ip?: string;
             geo_country?: string;
             geo_city?: string;
@@ -1549,6 +1551,10 @@ export interface components {
             xray_config_path: string;
             /** @default xray */
             xray_service_name: string;
+            /** @default /etc/sing-box/config.json */
+            hysteria_config_path: string;
+            /** @default sing-box */
+            hysteria_service_name: string;
         };
         ServerStats: {
             /** Format: float */

@@ -44,6 +44,8 @@ export function ServerFormDialog({
   const [passphrase, setPassphrase] = useState('')
   const [configPath, setConfigPath] = useState('/usr/local/etc/xray/config.json')
   const [serviceName, setServiceName] = useState('xray')
+  const [hyConfigPath, setHyConfigPath] = useState('/etc/sing-box/config.json')
+  const [hyServiceName, setHyServiceName] = useState('sing-box')
 
   useEffect(() => {
     if (!open) return
@@ -56,6 +58,8 @@ export function ServerFormDialog({
     setPassphrase('')
     setConfigPath(server?.xray_config_path ?? '/usr/local/etc/xray/config.json')
     setServiceName(server?.xray_service_name ?? 'xray')
+    setHyConfigPath(server?.hysteria_config_path ?? '/etc/sing-box/config.json')
+    setHyServiceName(server?.hysteria_service_name ?? 'sing-box')
   }, [open, server])
 
   const pending = createServer.isPending || updateServer.isPending
@@ -72,6 +76,8 @@ export function ServerFormDialog({
       ssh_passphrase: passphrase.trim() || undefined,
       xray_config_path: configPath.trim() || '/usr/local/etc/xray/config.json',
       xray_service_name: serviceName.trim() || 'xray',
+      hysteria_config_path: hyConfigPath.trim() || '/etc/sing-box/config.json',
+      hysteria_service_name: hyServiceName.trim() || 'sing-box',
     }
 
     try {
@@ -200,24 +206,51 @@ export function ServerFormDialog({
             </div>
           )}
 
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="sv-config">Xray config path</Label>
-              <Input
-                id="sv-config"
-                value={configPath}
-                onChange={(e) => setConfigPath(e.target.value)}
-                className="font-mono text-xs"
-              />
+          <div className="space-y-3 rounded-md border p-3">
+            <div>
+              <p className="text-sm font-medium">Engine paths</p>
+              <p className="text-xs text-muted-foreground">
+                Where the panel writes configs and which systemd services it restarts. Defaults fit a
+                standard install; the panel provisions these automatically.
+              </p>
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="sv-service">Xray service name</Label>
-              <Input
-                id="sv-service"
-                value={serviceName}
-                onChange={(e) => setServiceName(e.target.value)}
-                className="font-mono text-xs"
-              />
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="sv-config">Xray config path</Label>
+                <Input
+                  id="sv-config"
+                  value={configPath}
+                  onChange={(e) => setConfigPath(e.target.value)}
+                  className="font-mono text-xs"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="sv-service">Xray service name</Label>
+                <Input
+                  id="sv-service"
+                  value={serviceName}
+                  onChange={(e) => setServiceName(e.target.value)}
+                  className="font-mono text-xs"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="sv-hyconfig">Hysteria2 (sing-box) config path</Label>
+                <Input
+                  id="sv-hyconfig"
+                  value={hyConfigPath}
+                  onChange={(e) => setHyConfigPath(e.target.value)}
+                  className="font-mono text-xs"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="sv-hyservice">Hysteria2 service name</Label>
+                <Input
+                  id="sv-hyservice"
+                  value={hyServiceName}
+                  onChange={(e) => setHyServiceName(e.target.value)}
+                  className="font-mono text-xs"
+                />
+              </div>
             </div>
           </div>
 
