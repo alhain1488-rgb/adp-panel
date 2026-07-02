@@ -1486,6 +1486,123 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/backup/telegram": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read the Telegram auto-backup config (no secrets) */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Config status */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["TelegramBackupStatus"];
+                    };
+                };
+            };
+        };
+        /**
+         * Update the Telegram auto-backup config
+         * @description Blank token/passphrase fields keep the stored values.
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        enabled?: boolean;
+                        token?: string;
+                        chat_id?: string;
+                        passphrase?: string;
+                        interval_hours?: number;
+                    };
+                };
+            };
+            responses: {
+                /** @description Updated config status */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["TelegramBackupStatus"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/backup/telegram/run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Send a backup to Telegram now */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Sent */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            ok?: boolean;
+                        };
+                    };
+                };
+                /** @description Telegram send failed or config missing */
+                502: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/healthz": {
         parameters: {
             query?: never;
@@ -1883,6 +2000,16 @@ export interface components {
             hysteria_engine?: "sing-box" | "hysteria";
             /** @enum {string} */
             theme?: "light" | "dark" | "system";
+        };
+        TelegramBackupStatus: {
+            enabled?: boolean;
+            has_token?: boolean;
+            chat_id?: string;
+            has_passphrase?: boolean;
+            interval_hours?: number;
+            last_at?: string;
+            last_error?: string;
+            last_ok?: boolean;
         };
     };
     responses: {

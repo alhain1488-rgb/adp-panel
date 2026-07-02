@@ -14,10 +14,11 @@ import (
 
 // backupHandler exposes encrypted export/import of the whole panel database.
 type backupHandler struct {
-	svc     *backup.Service
-	store   *store.Store
-	logger  *slog.Logger
-	restart func() // triggers a process restart to apply a staged restore
+	svc      *backup.Service
+	telegram *backup.Telegram
+	store    *store.Store
+	logger   *slog.Logger
+	restart  func() // triggers a process restart to apply a staged restore
 }
 
 // minPassphrase is the shortest passphrase we accept — it is the only thing
@@ -118,4 +119,53 @@ func (h *backupHandler) importBackup(w http.ResponseWriter, r *http.Request) {
 	if h.restart != nil {
 		go h.restart()
 	}
+}
+
+// telegramGet returns the current Telegram auto-backup config (no secrets).
+func (h *backupHandler) telegramGet(w http.ResponseWriter, r *http.Request) {
+	status, err := h.telegram.Status(r.Context())
+	if err != nil {
+		h.logger.Error("read telegram config failed", "err", err)
+		writeError(w, http.StatusInternalServerError, "could not read config")
+		return
+	}
+	writeJSON(w, http.StatusOK, status)
+}
+
+// telegramPut updates the Telegram auto-backup config.
+func (h *backupHandler) telegramPut(w http.ResponseWriter, r *http.Request) {
+	var in backup.TelegramInput
+	if err := decode(r, &in); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if in.Passphrase != "" && len([]rune(in.Passphrase)) < minPassphrase {
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("passphrase must be at least %d characters", minPassphrase))
+		return
+	}
+	if err := h.telegram.SetConfig(r.Context(), in); err != nil {
+		h.logger.Error("save telegram config failed", "err", err)
+		writeError(w, http.StatusInternalServerError, "could not save config")
+		return
+	}
+	adminID, _ := auth.AdminIDFrom(r.Context())
+	recordAudit(r.Context(), h.store, r, adminID, "backup.telegram.config", "backup", 0, "")
+
+	status, err := h.telegram.Status(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "could not read config")
+		return
+	}
+	writeJSON(w, http.StatusOK, status)
+}
+
+// telegramRun sends a backup to Telegram immediately ("Backup now").
+func (h *backupHandler) telegramRun(w http.ResponseWriter, r *http.Request) {
+	if err := h.telegram.RunNow(r.Context()); err != nil {
+		writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	adminID, _ := auth.AdminIDFrom(r.Context())
+	recordAudit(r.Context(), h.store, r, adminID, "backup.telegram.run", "backup", 0, "")
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }

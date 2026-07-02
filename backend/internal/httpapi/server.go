@@ -33,6 +33,7 @@ type Deps struct {
 	Subscription *subscription.Service
 	Sync         *syncpkg.Service
 	Backup       *backup.Service
+	Telegram     *backup.Telegram
 	Logger       *slog.Logger
 	Version      string
 	Domain       string
@@ -99,9 +100,14 @@ func Router(d Deps) http.Handler {
 		r.Put("/api/settings", seth.update)
 
 		if d.Backup != nil {
-			bh := &backupHandler{svc: d.Backup, store: d.Store, logger: d.Logger, restart: d.Restart}
+			bh := &backupHandler{svc: d.Backup, telegram: d.Telegram, store: d.Store, logger: d.Logger, restart: d.Restart}
 			r.Post("/api/backup/export", bh.export)
 			r.Post("/api/backup/import", bh.importBackup)
+			if d.Telegram != nil {
+				r.Get("/api/backup/telegram", bh.telegramGet)
+				r.Put("/api/backup/telegram", bh.telegramPut)
+				r.Post("/api/backup/telegram/run", bh.telegramRun)
+			}
 		}
 
 		ih := &inboundsHandler{svc: d.Inbounds, servers: d.Servers, store: d.Store, sync: d.Sync}

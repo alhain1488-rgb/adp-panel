@@ -27,7 +27,7 @@ import (
 )
 
 // version is the backend build version; kept in sync with the frontend APP_VERSION.
-const version = "0.8.2.0"
+const version = "0.8.3.0"
 
 func main() {
 	logger := logging.New()
@@ -60,6 +60,7 @@ func main() {
 	subscriptionSvc := subscription.NewService(st, clientsSvc)
 	syncSvc := syncpkg.NewService(st, serversSvc)
 	backupSvc := backup.NewService(database, cfg.DBPath, cfg.EncryptionKey, version)
+	telegramSvc := backup.NewTelegram(backupSvc, st, cipher, logger)
 
 	seeded, err := authSvc.SeedAdmin(context.Background(), cfg.AdminUsername, cfg.AdminPassword)
 	if err != nil {
@@ -80,6 +81,7 @@ func main() {
 		Subscription: subscriptionSvc,
 		Sync:         syncSvc,
 		Backup:       backupSvc,
+		Telegram:     telegramSvc,
 		Logger:       logger,
 		Version:      version,
 		Domain:       cfg.Domain,
@@ -104,6 +106,9 @@ func main() {
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+
+	// Scheduled Telegram backups run until shutdown.
+	go telegramSvc.RunScheduler(ctx)
 
 	select {
 	case err := <-errCh:

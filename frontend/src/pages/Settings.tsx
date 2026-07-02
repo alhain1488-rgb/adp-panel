@@ -12,6 +12,7 @@ import {
   Upload,
   DatabaseBackup,
   AlertTriangle,
+  Send,
 } from 'lucide-react'
 import { PageHeader } from '@/components/common/page-header'
 import { Button } from '@/components/ui/button'
@@ -29,13 +30,22 @@ import {
 } from '@/components/ui/dialog'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Separator } from '@/components/ui/separator'
+import { Switch } from '@/components/ui/switch'
 import { useToast } from '@/components/ui/use-toast'
 import { useSettings, useUpdateSettings } from '@/api/hooks'
 import type { Settings, TotpSetup } from '@/api/types'
 import { useTheme, type Theme } from '@/theme/theme-provider'
 import { useAuth } from '@/auth/auth-context'
 import { api, RequestError } from '@/api/client'
-import { downloadBackup, uploadBackup, type ImportReport } from '@/api/backup'
+import {
+  downloadBackup,
+  uploadBackup,
+  useTelegramBackup,
+  useUpdateTelegramBackup,
+  useRunTelegramBackup,
+  type ImportReport,
+  type TelegramInput,
+} from '@/api/backup'
 import { cn } from '@/lib/utils'
 
 export default function SettingsPage() {
@@ -410,6 +420,8 @@ function BackupTab() {
         </CardContent>
       </Card>
 
+      <TelegramBackupCard />
+
       {/* Destructive-action confirmation */}
       <Dialog open={confirmOpen} onOpenChange={(v) => !importing && setConfirmOpen(v)}>
         <DialogContent>
@@ -457,6 +469,187 @@ function BackupTab() {
         </DialogContent>
       </Dialog>
     </div>
+  )
+}
+
+function TelegramBackupCard() {
+  const { data, isLoading } = useTelegramBackup()
+  const update = useUpdateTelegramBackup()
+  const runNow = useRunTelegramBackup()
+  const { toast } = useToast()
+
+  const [form, setForm] = useState<TelegramInput>({
+    enabled: false,
+    token: '',
+    chat_id: '',
+    passphrase: '',
+    interval_hours: 24,
+  })
+
+  useEffect(() => {
+    if (data) {
+      setForm({
+        enabled: data.enabled,
+        token: '',
+        chat_id: data.chat_id,
+        passphrase: '',
+        interval_hours: data.interval_hours,
+      })
+    }
+  }, [data])
+
+  const configured = !!data?.has_token && !!data?.has_passphrase && !!data?.chat_id
+
+  function save() {
+    update.mutate(form, {
+      onSuccess: () => {
+        toast({ title: 'Telegram backup saved' })
+        setForm((f) => ({ ...f, token: '', passphrase: '' }))
+      },
+      onError: (err) =>
+        toast({
+          variant: 'destructive',
+          title: 'Failed to save',
+          description: err instanceof RequestError ? err.message : 'Please try again.',
+        }),
+    })
+  }
+
+  function sendNow() {
+    runNow.mutate(undefined, {
+      onSuccess: () => toast({ title: 'Backup sent to Telegram' }),
+      onError: (err) =>
+        toast({
+          variant: 'destructive',
+          title: 'Send failed',
+          description: err instanceof RequestError ? err.message : 'Check the token, chat ID and passphrase.',
+        }),
+    })
+  }
+
+  if (isLoading) {
+    return (
+      <Card>
+        <CardHeader>
+          <Skeleton className="h-6 w-56" />
+          <Skeleton className="mt-2 h-4 w-72" />
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <Skeleton key={i} className="h-9 w-full" />
+          ))}
+        </CardContent>
+      </Card>
+    )
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Send className="h-5 w-5 text-primary" />
+          Automatic backup to Telegram
+        </CardTitle>
+        <CardDescription>
+          Send an encrypted backup to a Telegram chat on a schedule. Create a bot with{' '}
+          <span className="font-mono">@BotFather</span>, then paste its token and your chat ID.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="flex items-center justify-between rounded-lg border p-3">
+          <div>
+            <p className="text-sm font-medium">Scheduled backups</p>
+            <p className="text-xs text-muted-foreground">Send automatically at the interval below.</p>
+          </div>
+          <Switch
+            checked={form.enabled}
+            onCheckedChange={(v) => setForm((f) => ({ ...f, enabled: v }))}
+          />
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="tg-token">Bot token</Label>
+          <Input
+            id="tg-token"
+            type="password"
+            autoComplete="off"
+            placeholder={data?.has_token ? '•••••• stored — leave blank to keep' : '123456:ABC-DEF…'}
+            value={form.token}
+            onChange={(e) => setForm((f) => ({ ...f, token: e.target.value }))}
+          />
+        </div>
+
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="space-y-2">
+            <Label htmlFor="tg-chat">Chat ID</Label>
+            <Input
+              id="tg-chat"
+              placeholder="123456789"
+              value={form.chat_id}
+              onChange={(e) => setForm((f) => ({ ...f, chat_id: e.target.value }))}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="tg-interval">Interval (hours)</Label>
+            <Input
+              id="tg-interval"
+              type="number"
+              min={1}
+              value={form.interval_hours}
+              onChange={(e) =>
+                setForm((f) => ({ ...f, interval_hours: Math.max(1, Number(e.target.value) || 1) }))
+              }
+            />
+          </div>
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="tg-pass">Backup passphrase</Label>
+          <Input
+            id="tg-pass"
+            type="password"
+            autoComplete="off"
+            placeholder={data?.has_passphrase ? '•••••• stored — leave blank to keep' : 'At least 8 characters'}
+            value={form.passphrase}
+            onChange={(e) => setForm((f) => ({ ...f, passphrase: e.target.value }))}
+          />
+          <p className="text-xs text-muted-foreground">
+            Used to encrypt the scheduled backups. Store it safely — you'll need it to restore.
+          </p>
+        </div>
+
+        {data?.last_at && (
+          <div className="rounded-lg border bg-muted/40 p-3 text-xs">
+            <span className="text-muted-foreground">Last run: </span>
+            <span className="font-medium">{new Date(data.last_at).toLocaleString()}</span>{' '}
+            {data.last_ok ? (
+              <Badge variant="success">sent</Badge>
+            ) : (
+              <Badge variant="destructive">failed</Badge>
+            )}
+            {!data.last_ok && data.last_error && (
+              <p className="mt-1 text-destructive">{data.last_error}</p>
+            )}
+          </div>
+        )}
+
+        <div className="flex flex-wrap justify-end gap-2">
+          <Button
+            variant="outline"
+            onClick={sendNow}
+            disabled={runNow.isPending || !configured}
+            title={configured ? undefined : 'Save a token, chat ID and passphrase first'}
+          >
+            {runNow.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+            Send test now
+          </Button>
+          <Button onClick={save} disabled={update.isPending}>
+            {update.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+            Save
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
   )
 }
 

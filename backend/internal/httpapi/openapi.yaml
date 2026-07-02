@@ -743,6 +743,59 @@ paths:
         '400':
           $ref: '#/components/responses/BadRequest'
 
+  /api/backup/telegram:
+    get:
+      tags: [Backup]
+      summary: Read the Telegram auto-backup config (no secrets)
+      responses:
+        '200':
+          description: Config status
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TelegramBackupStatus' }
+    put:
+      tags: [Backup]
+      summary: Update the Telegram auto-backup config
+      description: Blank token/passphrase fields keep the stored values.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                enabled: { type: boolean }
+                token: { type: string }
+                chat_id: { type: string }
+                passphrase: { type: string }
+                interval_hours: { type: integer }
+      responses:
+        '200':
+          description: Updated config status
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TelegramBackupStatus' }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/backup/telegram/run:
+    post:
+      tags: [Backup]
+      summary: Send a backup to Telegram now
+      responses:
+        '200':
+          description: Sent
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+        '502':
+          description: Telegram send failed or config missing
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
   # -------------------------------------------------------------- Health
   /healthz:
     get:
@@ -1406,3 +1459,15 @@ components:
         theme:
           type: string
           enum: [light, dark, system]
+
+    TelegramBackupStatus:
+      type: object
+      properties:
+        enabled: { type: boolean }
+        has_token: { type: boolean }
+        chat_id: { type: string }
+        has_passphrase: { type: boolean }
+        interval_hours: { type: integer }
+        last_at: { type: string }
+        last_error: { type: string }
+        last_ok: { type: boolean }

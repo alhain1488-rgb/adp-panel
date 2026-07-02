@@ -1,7 +1,8 @@
 // Backup export/import use binary download and multipart upload, which the JSON
 // `api` client doesn't cover — so these call fetch directly, reusing the same
 // bearer token and error shape.
-import { getToken, RequestError } from './client'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { api, getToken, RequestError } from './client'
 import type { ApiError } from './types'
 
 export interface ImportReport {
@@ -68,4 +69,51 @@ export async function uploadBackup(file: File, passphrase: string): Promise<Impo
 
   const data = (await res.json()) as { report: ImportReport }
   return data.report
+}
+
+// ---- Telegram auto-backup ----
+
+export interface TelegramStatus {
+  enabled: boolean
+  has_token: boolean
+  chat_id: string
+  has_passphrase: boolean
+  interval_hours: number
+  last_at: string
+  last_error: string
+  last_ok: boolean
+}
+
+export interface TelegramInput {
+  enabled: boolean
+  token: string // blank = keep the stored one
+  chat_id: string
+  passphrase: string // blank = keep the stored one
+  interval_hours: number
+}
+
+const TG_KEY = ['backup', 'telegram']
+
+export function useTelegramBackup() {
+  return useQuery({
+    queryKey: TG_KEY,
+    queryFn: () => api.get<TelegramStatus>('/api/backup/telegram'),
+  })
+}
+
+export function useUpdateTelegramBackup() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (input: TelegramInput) => api.put<TelegramStatus>('/api/backup/telegram', input),
+    onSuccess: (data) => qc.setQueryData(TG_KEY, data),
+  })
+}
+
+export function useRunTelegramBackup() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: () => api.post<{ ok: boolean }>('/api/backup/telegram/run'),
+    // Refresh the status so the "last run" line updates after a send.
+    onSuccess: () => qc.invalidateQueries({ queryKey: TG_KEY }),
+  })
 }

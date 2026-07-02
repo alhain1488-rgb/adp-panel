@@ -6,8 +6,9 @@
 > (Ubuntu 22.04), работает по HTTPS с доверенным сертификатом Let's Encrypt (через sslip.io-хостнейм,
 > домена нет); движки провижинятся, клиенты/подписки/VPN проверены рабочим трафиком; UI отревьюен
 > человеком. Проект запушен в **публичный** GitHub-репозиторий `alhain1488-rgb/adp-panel`, ветка
-> `build/mvp`; установка одной командой (`install.sh`). Последняя фича — **бэкапы (Export/Import)**,
-> см. запись «Пост-9» ниже. Версия — `frontend/src/version.ts` (сейчас 0.8.2.0; бампать при правках).
+> `build/mvp`; установка одной командой (`install.sh`). Последняя фича — **бэкапы**: ручной
+> Export/Import + авто-отправка в Telegram по расписанию, см. запись «Пост-9» ниже. Версия —
+> `frontend/src/version.ts` (сейчас 0.8.3.0; бампать при правках).
 > Docker — через **Colima** локально; на VPS — `docker compose up` (backend + Caddy). Данные деплоя
 > (IP/SSH) — только в сессии, в репозиторий не попали (проверено сканом всей истории). Дальше — по
 > запросам человека.
@@ -305,4 +306,22 @@ inbound с видимыми дефолтами и live-превью (в духе
 - Adversarial-ревью диффа (3 измерения × verify, 10 агентов) — **0 подтверждённых findings**.
 - OpenAPI/Swagger обновлены, встроенная копия синхронизирована.
 
-**Дальше (Stage 2, по запросу):** авто-бэкап в Telegram по расписанию + кнопка «Backup now».
+## Пост-9 — Авто-бэкап в Telegram (Stage 2) ✅ (v0.8.3.0)
+
+**Сделано (backend `internal/backup/telegram.go`):**
+- Отправка зашифрованного `.adpbak` в Telegram-чат через Bot API (`sendDocument`, multipart).
+- Конфиг в KV-`settings`: bot token и парольная фраза **шифруются at-rest** мастер-ключом (как все
+  секреты); chat id, enabled, interval_hours, last_at/last_error/last_ok — статус последнего прогона.
+- Фоновый планировщик (тикер 10 мин, гейт по `enabled` + интервалу от `last_at`) в `main.go`,
+  живёт до shutdown. Метод `RunNow` — для кнопки «Backup now» и планировщика.
+- Эндпоинты (JWT): `GET/PUT /api/backup/telegram` (статус/конфиг, **секреты наружу не отдаются**;
+  пустой token/passphrase в PUT = «оставить прежний»), `POST /api/backup/telegram/run`. Аудит.
+
+**Сделано (frontend):** карточка «Automatic backup to Telegram» на вкладке Backup — enable-тоггл,
+bot token, chat id, интервал, парольная фраза (плейсхолдеры «stored — leave blank to keep»),
+«Send test now», строка статуса последнего прогона с бейджем sent/failed. MSW-стабы.
+
+**Проверено:** юнит-тесты (config round-trip с шифрованием секретов, `RunNow` против mock Bot API
+через httptest — успех и ошибка записываются в статус, отсутствие конфига → ошибка) — зелёные;
+`go test/vet/gofmt` и `npm build/lint/test` — зелёные; UI проверен в браузере end-to-end (сохранение
+конфига → «Send test now» → «Last run: … sent»), чистая консоль на свежей загрузке.

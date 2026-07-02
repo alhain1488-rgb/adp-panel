@@ -87,6 +87,18 @@ const admin = { id: 1, username: 'admin', totp_enabled: true, created_at: server
 
 // ------------------------------------------------------------------ handlers
 
+// Mutable mock state for the Telegram auto-backup config.
+const telegramBackup = {
+  enabled: false,
+  has_token: false,
+  chat_id: '',
+  has_passphrase: false,
+  interval_hours: 24,
+  last_at: '',
+  last_error: '',
+  last_ok: false,
+}
+
 export const handlers = [
   // ---- Health ----
   http.get('/healthz', () => json({ status: 'ok', version: '0.1.0-mock' })),
@@ -535,5 +547,30 @@ export const handlers = [
         created_at: new Date().toISOString(),
       },
     })
+  }),
+
+  http.get('/api/backup/telegram', ({ request }) => {
+    if (!requireAuth(request)) return unauthorized()
+    return json(telegramBackup)
+  }),
+  http.put('/api/backup/telegram', async ({ request }) => {
+    if (!requireAuth(request)) return unauthorized()
+    const input = (await request.json()) as any
+    telegramBackup.enabled = !!input.enabled
+    telegramBackup.chat_id = input.chat_id ?? ''
+    telegramBackup.interval_hours = input.interval_hours || 24
+    if (input.token) telegramBackup.has_token = true
+    if (input.passphrase) telegramBackup.has_passphrase = true
+    return json(telegramBackup)
+  }),
+  http.post('/api/backup/telegram/run', ({ request }) => {
+    if (!requireAuth(request)) return unauthorized()
+    if (!(telegramBackup.has_token && telegramBackup.has_passphrase && telegramBackup.chat_id)) {
+      return json({ error: 'set bot token, chat id and passphrase first' }, { status: 502 })
+    }
+    telegramBackup.last_at = new Date().toISOString()
+    telegramBackup.last_ok = true
+    telegramBackup.last_error = ''
+    return json({ ok: true })
   }),
 ]
