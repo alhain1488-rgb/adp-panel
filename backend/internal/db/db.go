@@ -26,6 +26,11 @@ func Open(path string) (*sql.DB, error) {
 				return nil, fmt.Errorf("db: create data dir: %w", err)
 			}
 		}
+		// A restore staged by the backup import lands here before the DB is
+		// opened, when nothing holds the file — the safe moment to swap.
+		if err := applyStagedRestore(path); err != nil {
+			return nil, err
+		}
 	}
 
 	dsn := path + "?_pragma=foreign_keys(1)&_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)"
@@ -61,6 +66,28 @@ func Ready(ctx context.Context, sqlDB *sql.DB) error {
 	}
 	if n == 0 {
 		return fmt.Errorf("db: no migrations applied")
+	}
+	return nil
+}
+
+// applyStagedRestore swaps in a database staged by the backup import as
+// "<path>.incoming". It removes the current DB (and any WAL/SHM/journal) and
+// renames the staged file into place. A no-op when nothing is staged.
+func applyStagedRestore(path string) error {
+	incoming := path + ".incoming"
+	if _, err := os.Stat(incoming); err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("db: stat staged restore: %w", err)
+	}
+	for _, p := range []string{path, path + "-wal", path + "-shm", path + "-journal"} {
+		if err := os.Remove(p); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("db: clear old db for restore: %w", err)
+		}
+	}
+	if err := os.Rename(incoming, path); err != nil {
+		return fmt.Errorf("db: apply staged restore: %w", err)
 	}
 	return nil
 }

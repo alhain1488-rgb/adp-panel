@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/adp/panel/internal/auth"
+	"github.com/adp/panel/internal/backup"
 	"github.com/adp/panel/internal/clients"
 	"github.com/adp/panel/internal/config"
 	"github.com/adp/panel/internal/crypto"
@@ -26,7 +27,7 @@ import (
 )
 
 // version is the backend build version; kept in sync with the frontend APP_VERSION.
-const version = "0.8.1.0"
+const version = "0.8.2.0"
 
 func main() {
 	logger := logging.New()
@@ -58,6 +59,7 @@ func main() {
 	clientsSvc := clients.NewService(st)
 	subscriptionSvc := subscription.NewService(st, clientsSvc)
 	syncSvc := syncpkg.NewService(st, serversSvc)
+	backupSvc := backup.NewService(database, cfg.DBPath, cfg.EncryptionKey, version)
 
 	seeded, err := authSvc.SeedAdmin(context.Background(), cfg.AdminUsername, cfg.AdminPassword)
 	if err != nil {
@@ -77,10 +79,17 @@ func main() {
 		Clients:      clientsSvc,
 		Subscription: subscriptionSvc,
 		Sync:         syncSvc,
+		Backup:       backupSvc,
 		Logger:       logger,
 		Version:      version,
 		Domain:       cfg.Domain,
 		SubBaseURL:   cfg.SubBaseURL,
+		// Restore is applied on the next boot; trigger a graceful restart so the
+		// staged database is swapped in (works under Docker's restart policy).
+		Restart: func() {
+			logger.Info("applying backup restore, restarting")
+			_ = syscall.Kill(syscall.Getpid(), syscall.SIGTERM)
+		},
 	})
 	srv := httpapi.NewServer(cfg.HTTPAddr, handler)
 

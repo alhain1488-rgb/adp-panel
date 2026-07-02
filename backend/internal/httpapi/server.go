@@ -13,6 +13,7 @@ import (
 	"github.com/go-chi/httprate"
 
 	"github.com/adp/panel/internal/auth"
+	"github.com/adp/panel/internal/backup"
 	"github.com/adp/panel/internal/clients"
 	"github.com/adp/panel/internal/inbounds"
 	"github.com/adp/panel/internal/servers"
@@ -31,11 +32,14 @@ type Deps struct {
 	Clients      *clients.Service
 	Subscription *subscription.Service
 	Sync         *syncpkg.Service
+	Backup       *backup.Service
 	Logger       *slog.Logger
 	Version      string
 	Domain       string
 	SubBaseURL   string
 	Theme        string
+	// Restart applies a staged backup restore by restarting the process.
+	Restart func()
 }
 
 // Router builds the chi router with middleware and routes mounted.
@@ -93,6 +97,12 @@ func Router(d Deps) http.Handler {
 		seth := &settingsHandler{store: d.Store, domain: d.Domain, subBaseURL: d.SubBaseURL, defaultTheme: d.Theme}
 		r.Get("/api/settings", seth.get)
 		r.Put("/api/settings", seth.update)
+
+		if d.Backup != nil {
+			bh := &backupHandler{svc: d.Backup, store: d.Store, logger: d.Logger, restart: d.Restart}
+			r.Post("/api/backup/export", bh.export)
+			r.Post("/api/backup/import", bh.importBackup)
+		}
 
 		ih := &inboundsHandler{svc: d.Inbounds, servers: d.Servers, store: d.Store, sync: d.Sync}
 

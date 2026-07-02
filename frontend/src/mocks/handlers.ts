@@ -501,4 +501,39 @@ export const handlers = [
     Object.assign(settings, input)
     return json(settings)
   }),
+
+  // Backup export/import — stubbed so the UI is demoable on mock data. The real
+  // backend snapshots SQLite and re-encrypts secrets; here we just round-trip.
+  http.post('/api/backup/export', async ({ request }) => {
+    if (!requireAuth(request)) return unauthorized()
+    const { passphrase } = (await request.json()) as { passphrase?: string }
+    if (!passphrase || passphrase.length < 8) {
+      return json({ error: 'passphrase must be at least 8 characters' }, { status: 400 })
+    }
+    const body = new Blob([`ADPBAK1 mock backup (${servers.length} servers)`])
+    return new HttpResponse(body, {
+      status: 200,
+      headers: {
+        'Content-Type': 'application/octet-stream',
+        'Content-Disposition': 'attachment; filename="adp-panel-backup-mock.adpbak"',
+      },
+    })
+  }),
+  http.post('/api/backup/import', async ({ request }) => {
+    if (!requireAuth(request)) return unauthorized()
+    const form = await request.formData()
+    if (!form.get('passphrase')) return json({ error: 'passphrase is required' }, { status: 400 })
+    if (!form.get('file')) return json({ error: 'no backup file provided' }, { status: 400 })
+    return json({
+      ok: true,
+      restarting: true,
+      report: {
+        servers: servers.length,
+        inbounds: inbounds.length,
+        clients: clients.length,
+        source_version: 'mock',
+        created_at: new Date().toISOString(),
+      },
+    })
+  }),
 ]

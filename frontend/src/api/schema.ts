@@ -1382,6 +1382,110 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/backup/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Download an encrypted backup of the whole database
+         * @description Returns a passphrase-encrypted archive (servers, inbounds, clients, grants and encrypted secrets). Restore it on any fresh install.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        passphrase: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Encrypted backup archive */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/octet-stream": string;
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/backup/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Restore from an encrypted backup (replaces all data, restarts)
+         * @description Uploads an archive, re-encrypts its secrets under this server's master key, and stages the restore. The panel restarts to apply it; afterwards sign in with the backed-up admin credentials.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "multipart/form-data": {
+                        /** Format: binary */
+                        file: string;
+                        passphrase: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Restore staged; panel restarting */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            ok?: boolean;
+                            restarting?: boolean;
+                            report?: {
+                                servers?: number;
+                                inbounds?: number;
+                                clients?: number;
+                                source_version?: string;
+                                created_at?: string;
+                            };
+                        };
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/healthz": {
         parameters: {
             query?: never;

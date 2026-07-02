@@ -1,5 +1,18 @@
-import { useEffect, useState } from 'react'
-import { Monitor, Moon, Sun, ShieldCheck, KeyRound, Loader2, Copy, Check } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import {
+  Monitor,
+  Moon,
+  Sun,
+  ShieldCheck,
+  KeyRound,
+  Loader2,
+  Copy,
+  Check,
+  Download,
+  Upload,
+  DatabaseBackup,
+  AlertTriangle,
+} from 'lucide-react'
 import { PageHeader } from '@/components/common/page-header'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -22,6 +35,7 @@ import type { Settings, TotpSetup } from '@/api/types'
 import { useTheme, type Theme } from '@/theme/theme-provider'
 import { useAuth } from '@/auth/auth-context'
 import { api, RequestError } from '@/api/client'
+import { downloadBackup, uploadBackup, type ImportReport } from '@/api/backup'
 import { cn } from '@/lib/utils'
 
 export default function SettingsPage() {
@@ -34,6 +48,7 @@ export default function SettingsPage() {
           <TabsTrigger value="general">General</TabsTrigger>
           <TabsTrigger value="appearance">Appearance</TabsTrigger>
           <TabsTrigger value="security">Security</TabsTrigger>
+          <TabsTrigger value="backup">Backup</TabsTrigger>
         </TabsList>
 
         <TabsContent value="general" className="mt-6">
@@ -44,6 +59,9 @@ export default function SettingsPage() {
         </TabsContent>
         <TabsContent value="security" className="mt-6">
           <SecurityTab />
+        </TabsContent>
+        <TabsContent value="backup" className="mt-6">
+          <BackupTab />
         </TabsContent>
       </Tabs>
     </div>
@@ -250,6 +268,195 @@ function SecurityTab() {
 
       <TwoFactorDialog open={open} onOpenChange={setOpen} />
     </Card>
+  )
+}
+
+// ---- Backup & Restore ----
+function BackupTab() {
+  const { toast } = useToast()
+
+  // Export
+  const [exportPass, setExportPass] = useState('')
+  const [exporting, setExporting] = useState(false)
+
+  async function handleExport() {
+    if (exportPass.length < 8) return
+    setExporting(true)
+    try {
+      await downloadBackup(exportPass)
+      toast({
+        title: 'Backup downloaded',
+        description: 'Keep the file and its passphrase together, somewhere safe.',
+      })
+    } catch (err) {
+      toast({
+        variant: 'destructive',
+        title: 'Backup failed',
+        description: err instanceof RequestError ? err.message : 'Please try again.',
+      })
+    } finally {
+      setExporting(false)
+    }
+  }
+
+  // Import
+  const fileRef = useRef<HTMLInputElement>(null)
+  const [file, setFile] = useState<File | null>(null)
+  const [importPass, setImportPass] = useState('')
+  const [confirmOpen, setConfirmOpen] = useState(false)
+  const [importing, setImporting] = useState(false)
+  const [done, setDone] = useState<ImportReport | null>(null)
+
+  async function handleImport() {
+    if (!file || importPass.length < 1) return
+    setImporting(true)
+    try {
+      const report = await uploadBackup(file, importPass)
+      setConfirmOpen(false)
+      setDone(report)
+    } catch (err) {
+      toast({
+        variant: 'destructive',
+        title: 'Restore failed',
+        description: err instanceof RequestError ? err.message : 'Please try again.',
+      })
+    } finally {
+      setImporting(false)
+    }
+  }
+
+  return (
+    <div className="grid max-w-2xl gap-6">
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Download className="h-5 w-5 text-primary" />
+            Export backup
+          </CardTitle>
+          <CardDescription>
+            Download an encrypted snapshot of everything — servers, inbounds, clients and their
+            grants. Restore it on any fresh install to migrate.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="export-pass">Encryption passphrase</Label>
+            <Input
+              id="export-pass"
+              type="password"
+              autoComplete="new-password"
+              placeholder="At least 8 characters"
+              value={exportPass}
+              onChange={(e) => setExportPass(e.target.value)}
+            />
+            <p className="text-xs text-muted-foreground">
+              The backup is useless without this passphrase — you'll need it to restore. There is no
+              way to recover it.
+            </p>
+          </div>
+          <div className="flex justify-end">
+            <Button onClick={handleExport} disabled={exporting || exportPass.length < 8}>
+              {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+              Download backup
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Upload className="h-5 w-5 text-primary" />
+            Restore from backup
+          </CardTitle>
+          <CardDescription>
+            Import a backup file. This <span className="font-medium text-foreground">replaces all
+            current data</span> and restarts the panel.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="import-file">Backup file</Label>
+            <Input
+              id="import-file"
+              ref={fileRef}
+              type="file"
+              accept=".adpbak"
+              className="cursor-pointer file:mr-3 file:cursor-pointer file:rounded file:border-0 file:bg-muted file:px-2 file:py-1 file:text-sm"
+              onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="import-pass">Passphrase</Label>
+            <Input
+              id="import-pass"
+              type="password"
+              autoComplete="off"
+              placeholder="The passphrase this backup was made with"
+              value={importPass}
+              onChange={(e) => setImportPass(e.target.value)}
+            />
+          </div>
+          <div className="flex justify-end">
+            <Button
+              variant="destructive"
+              onClick={() => setConfirmOpen(true)}
+              disabled={!file || importPass.length < 1}
+            >
+              <Upload className="h-4 w-4" />
+              Restore
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Destructive-action confirmation */}
+      <Dialog open={confirmOpen} onOpenChange={(v) => !importing && setConfirmOpen(v)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-destructive" />
+              Replace all data?
+            </DialogTitle>
+            <DialogDescription>
+              Restoring overwrites every server, inbound and client currently in this panel, then
+              restarts it. After it comes back, log in with the admin credentials from the{' '}
+              <span className="font-medium text-foreground">backed-up</span> panel — not this one.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setConfirmOpen(false)} disabled={importing}>
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={handleImport} disabled={importing}>
+              {importing && <Loader2 className="h-4 w-4 animate-spin" />}
+              Restore &amp; restart
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Success + restart notice */}
+      <Dialog open={!!done} onOpenChange={(v) => !v && setDone(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <DatabaseBackup className="h-5 w-5 text-primary" />
+              Restore applied
+            </DialogTitle>
+            <DialogDescription>
+              Imported {done?.servers ?? 0} server{done?.servers === 1 ? '' : 's'},{' '}
+              {done?.inbounds ?? 0} inbound{done?.inbounds === 1 ? '' : 's'} and {done?.clients ?? 0}{' '}
+              client{done?.clients === 1 ? '' : 's'}. The panel is restarting — give it ~15 seconds,
+              then reload and sign in with the backed-up admin credentials.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex justify-end">
+            <Button onClick={() => window.location.reload()}>Reload panel</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
   )
 }
 

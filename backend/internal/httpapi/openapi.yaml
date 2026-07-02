@@ -672,6 +672,77 @@ paths:
               schema:
                 $ref: '#/components/schemas/Settings'
 
+  # -------------------------------------------------------------- Backup
+  /api/backup/export:
+    post:
+      tags: [Backup]
+      summary: Download an encrypted backup of the whole database
+      description: >
+        Returns a passphrase-encrypted archive (servers, inbounds, clients,
+        grants and encrypted secrets). Restore it on any fresh install.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [passphrase]
+              properties:
+                passphrase:
+                  type: string
+                  minLength: 8
+      responses:
+        '200':
+          description: Encrypted backup archive
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/backup/import:
+    post:
+      tags: [Backup]
+      summary: Restore from an encrypted backup (replaces all data, restarts)
+      description: >
+        Uploads an archive, re-encrypts its secrets under this server's master
+        key, and stages the restore. The panel restarts to apply it; afterwards
+        sign in with the backed-up admin credentials.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file, passphrase]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                passphrase:
+                  type: string
+      responses:
+        '200':
+          description: Restore staged; panel restarting
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  restarting: { type: boolean }
+                  report:
+                    type: object
+                    properties:
+                      servers: { type: integer }
+                      inbounds: { type: integer }
+                      clients: { type: integer }
+                      source_version: { type: string }
+                      created_at: { type: string }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
   # -------------------------------------------------------------- Health
   /healthz:
     get:
