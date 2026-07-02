@@ -164,7 +164,8 @@ func (s *Service) Connect(ctx context.Context, id int64) (ssh.Runner, *store.Ser
 }
 
 // Provision installs engines on the node (auto after create, or via /install).
-func (s *Service) Provision(ctx context.Context, id int64) (*store.Server, error) {
+// When wipe is set, competing proxy/VPN stacks are removed first (opt-in).
+func (s *Service) Provision(ctx context.Context, id int64, wipe bool) (*store.Server, error) {
 	srv, err := s.store.GetServer(ctx, id)
 	if err != nil {
 		return nil, err
@@ -186,7 +187,7 @@ func (s *Service) Provision(ctx context.Context, id int64) (*store.Server, error
 	}
 	defer func() { _ = runner.Close() }()
 
-	res, err := s.prov.Provision(ctx, runner, srv.Host, srv.HysteriaServiceName)
+	res, err := s.prov.Provision(ctx, runner, srv.Host, srv.HysteriaServiceName, wipe)
 	if err != nil {
 		return fail(err)
 	}
@@ -197,9 +198,10 @@ func (s *Service) Provision(ctx context.Context, id int64) (*store.Server, error
 
 // StartProvision marks the node "installing" and runs provisioning in the
 // background (installs take minutes on a real node). Callers return immediately.
-func (s *Service) StartProvision(id int64) {
+// wipe requests the opt-in node cleanup before install.
+func (s *Service) StartProvision(id int64, wipe bool) {
 	_ = s.store.SetProvision(context.Background(), id, "installing", "", "")
-	go func() { _, _ = s.Provision(context.Background(), id) }()
+	go func() { _, _ = s.Provision(context.Background(), id, wipe) }()
 }
 
 // Check tests reachability and refreshes ip/geo/engine status.

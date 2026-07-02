@@ -78,6 +78,9 @@ type serverInput struct {
 	XrayServiceName     string `json:"xray_service_name"`
 	HysteriaConfigPath  string `json:"hysteria_config_path"`
 	HysteriaServiceName string `json:"hysteria_service_name"`
+	// WipeExisting opts into removing competing proxy/VPN stacks on the node
+	// before installing the engines. Not persisted — a one-time provision action.
+	WipeExisting bool `json:"wipe_existing"`
 }
 
 func (in serverInput) toServiceInput() servers.Input {
@@ -143,9 +146,9 @@ func (h *serversHandler) create(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to create server")
 		return
 	}
-	h.audit(r, "server.create", "server", srv.ID, `{"name":`+strconv.Quote(srv.Name)+`}`)
-	// Auto-provision engines (SPEC §5.1) in the background.
-	h.svc.StartProvision(srv.ID)
+	h.audit(r, "server.create", "server", srv.ID, `{"name":`+strconv.Quote(srv.Name)+`,"wipe":`+strconv.FormatBool(in.WipeExisting)+`}`)
+	// Auto-provision engines (SPEC §5.1) in the background; optionally wipe first.
+	h.svc.StartProvision(srv.ID, in.WipeExisting)
 	if refreshed, err := h.svc.Get(r.Context(), srv.ID); err == nil {
 		srv = refreshed
 	}
@@ -245,8 +248,12 @@ func (h *serversHandler) install(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to load server")
 		return
 	}
-	h.audit(r, "server.install", "server", id, "{}")
-	h.svc.StartProvision(id)
+	var body struct {
+		WipeExisting bool `json:"wipe_existing"`
+	}
+	_ = decode(r, &body)
+	h.audit(r, "server.install", "server", id, `{"wipe":`+strconv.FormatBool(body.WipeExisting)+`}`)
+	h.svc.StartProvision(id, body.WipeExisting)
 	if refreshed, err := h.svc.Get(r.Context(), id); err == nil {
 		srv = refreshed
 	}

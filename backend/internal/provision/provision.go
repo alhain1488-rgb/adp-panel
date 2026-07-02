@@ -43,6 +43,51 @@ const (
 	CmdEnsureCertDir = `mkdir -p /etc/sing-box`
 )
 
+// CmdCleanNode is the optional, opt-in pre-provision cleanup. It removes
+// competing proxy/VPN stacks and panels so their services stop squatting the
+// ports and memory the panel's engines need. It is deliberately *targeted*: it
+// never touches the OS, SSH, networking, or generic web servers (nginx/apache),
+// and it is best-effort — it always exits 0, so a stray leftover can never abort
+// the install. It stops/disables known units, kills leftover processes, removes
+// all Docker containers (frees ports/RAM; Docker itself is kept), and deletes
+// known proxy binaries, configs and unit files.
+const CmdCleanNode = installEnv + `
+set +e
+echo "[clean] stopping proxy/VPN/panel services"
+for svc in xray v2ray sing-box hysteria hysteria-server hysteria2 trojan trojan-go \
+           shadowsocks-libev ss-server shadowsocks-rust snell tuic naiveproxy \
+           brook gost xrayr v2raya x-ui 3x-ui s-ui marzban marzban-node \
+           wg-quick@wg0 wireguard openvpn openvpn@server; do
+  systemctl stop "$svc" >/dev/null 2>&1
+  systemctl disable "$svc" >/dev/null 2>&1
+done
+echo "[clean] killing leftover proxy processes"
+for p in xray v2ray sing-box hysteria trojan ss-server ss-local shadowsocks tuic naive brook gost xrayr v2raya; do
+  pkill -9 -x "$p" >/dev/null 2>&1
+done
+echo "[clean] removing docker containers"
+if command -v docker >/dev/null 2>&1; then
+  ids=$(docker ps -aq 2>/dev/null)
+  [ -n "$ids" ] && docker rm -f $ids >/dev/null 2>&1
+fi
+echo "[clean] removing proxy binaries, configs and unit files"
+rm -rf /usr/local/etc/xray /usr/local/bin/xray /usr/local/share/xray \
+       /etc/systemd/system/xray.service /etc/systemd/system/xray@.service \
+       /usr/local/etc/v2ray /usr/local/bin/v2ray /etc/v2ray \
+       /etc/systemd/system/v2ray.service /etc/systemd/system/v2ray@.service \
+       /etc/sing-box /usr/bin/sing-box /usr/local/bin/sing-box /etc/systemd/system/sing-box.service \
+       /etc/hysteria /usr/local/bin/hysteria /etc/systemd/system/hysteria-server.service \
+       /etc/trojan /etc/trojan-go /usr/bin/trojan /usr/local/bin/trojan-go \
+       /etc/shadowsocks-libev /usr/bin/ss-server /usr/local/bin/ss-server \
+       /usr/local/bin/tuic /usr/local/bin/brook /usr/local/bin/gost \
+       /opt/3x-ui /opt/x-ui /etc/x-ui /usr/local/x-ui /opt/s-ui \
+       /opt/marzban /opt/marzban-node /opt/marzban-scripts \
+       /usr/local/bin/v2raya /etc/systemd/system/v2raya.service /usr/local/bin/xrayr /etc/XrayR \
+       >/dev/null 2>&1
+systemctl daemon-reload >/dev/null 2>&1
+echo "[clean] done"
+exit 0`
+
 // EngineInfo describes an installed engine. JSON tags match the API EngineStatus
 // shape so the cached engines_json can be passed through unchanged.
 type EngineInfo struct {
@@ -70,13 +115,20 @@ var supportedOS = map[string]bool{"debian": true, "ubuntu": true}
 
 // Provision installs both engines on the node and generates a self-signed cert.
 // host is used as the cert CN; hyService is the systemd unit name for sing-box.
-func (p *Provisioner) Provision(ctx context.Context, r ssh.Runner, host, hyService string) (*Result, error) {
+func (p *Provisioner) Provision(ctx context.Context, r ssh.Runner, host, hyService string, wipe bool) (*Result, error) {
 	osID, err := p.detectOS(ctx, r)
 	if err != nil {
 		return nil, err
 	}
 	if !supportedOS[osID] {
 		return nil, fmt.Errorf("provision: unsupported OS %q (only Debian/Ubuntu are supported)", osID)
+	}
+
+	// Opt-in: wipe competing proxy stacks before installing our engines.
+	if wipe {
+		if err := p.clean(ctx, r); err != nil {
+			return nil, err
+		}
 	}
 
 	if err := p.aptPrep(ctx, r); err != nil {
@@ -116,6 +168,16 @@ func (p *Provisioner) detectOS(ctx context.Context, r ssh.Runner) (string, error
 		return "", fmt.Errorf("provision: detect OS: %w", err)
 	}
 	return strings.ToLower(strings.TrimSpace(res.Stdout)), nil
+}
+
+// clean runs the targeted node cleanup (best-effort). The command always exits
+// 0, so only a transport error is surfaced — a leftover we couldn't remove must
+// not block the install.
+func (p *Provisioner) clean(ctx context.Context, r ssh.Runner) error {
+	if _, err := r.Run(ctx, CmdCleanNode); err != nil {
+		return fmt.Errorf("provision: clean node: %w", err)
+	}
+	return nil
 }
 
 // aptPrep updates apt and pre-installs the installers' dependencies.

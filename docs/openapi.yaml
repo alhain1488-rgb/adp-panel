@@ -1111,6 +1111,13 @@ components:
         hysteria_service_name:
           type: string
           default: sing-box
+        wipe_existing:
+          type: boolean
+          default: false
+          description: >
+            One-time provision option (not stored). If true, the panel removes
+            competing proxy/VPN stacks and panels on the node before installing
+            the engines, freeing conflicting ports and memory. OS/SSH untouched.
 
     ServerStats:
       type: object

@@ -124,7 +124,7 @@ func TestServers_ProvisionInstalls(t *testing.T) {
 	srv := createServer(t, env, token, "s1")
 
 	// run provisioning synchronously via the service
-	got, err := env.servers.Provision(context.Background(), srv.ID)
+	got, err := env.servers.Provision(context.Background(), srv.ID, false)
 	if err != nil {
 		t.Fatal(err)
 	}

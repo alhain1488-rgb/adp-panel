@@ -43,9 +43,12 @@ func scriptedRunner(osID string, xrayPre, singPre bool) *sshtest.MockRunner {
 
 func TestProvision_FreshInstall(t *testing.T) {
 	r := scriptedRunner("ubuntu", false, false)
-	res, err := New().Provision(context.Background(), r, "node.example.com", "sing-box")
+	res, err := New().Provision(context.Background(), r, "node.example.com", "sing-box", false)
 	if err != nil {
 		t.Fatalf("provision: %v", err)
+	}
+	if r.Ran("[clean] done") {
+		t.Error("cleanup must not run when wipe is false")
 	}
 	if res.OS != "ubuntu" {
 		t.Errorf("OS = %q", res.OS)
@@ -72,7 +75,7 @@ func TestProvision_FreshInstall(t *testing.T) {
 
 func TestProvision_UnsupportedOS(t *testing.T) {
 	r := scriptedRunner("centos", false, false)
-	_, err := New().Provision(context.Background(), r, "node", "sing-box")
+	_, err := New().Provision(context.Background(), r, "node", "sing-box", false)
 	if err == nil || !strings.Contains(err.Error(), "unsupported OS") {
 		t.Fatalf("expected unsupported OS error, got %v", err)
 	}
@@ -81,9 +84,36 @@ func TestProvision_UnsupportedOS(t *testing.T) {
 	}
 }
 
+func TestProvision_WipeRunsCleanupBeforeInstall(t *testing.T) {
+	r := scriptedRunner("ubuntu", false, false)
+	if _, err := New().Provision(context.Background(), r, "node", "sing-box", true); err != nil {
+		t.Fatalf("provision: %v", err)
+	}
+	if !r.Ran("[clean] done") {
+		t.Error("expected node cleanup to run when wipe is true")
+	}
+	if !r.Ran("systemctl daemon-reload") {
+		t.Error("expected cleanup to remove unit files and reload systemd")
+	}
+	// Cleanup must not stop the actual install from proceeding.
+	if !r.Ran("install-release.sh") || !r.Ran("deb-install.sh") {
+		t.Error("engines must still install after cleanup")
+	}
+}
+
+func TestProvision_WipeSkippedOnUnsupportedOS(t *testing.T) {
+	r := scriptedRunner("centos", false, false)
+	if _, err := New().Provision(context.Background(), r, "node", "sing-box", true); err == nil {
+		t.Fatal("expected unsupported OS error")
+	}
+	if r.Ran("[clean] done") {
+		t.Error("cleanup must not run on an unsupported OS")
+	}
+}
+
 func TestProvision_Idempotent(t *testing.T) {
 	r := scriptedRunner("debian", true, true) // both already installed
-	res, err := New().Provision(context.Background(), r, "node", "sing-box")
+	res, err := New().Provision(context.Background(), r, "node", "sing-box", false)
 	if err != nil {
 		t.Fatal(err)
 	}

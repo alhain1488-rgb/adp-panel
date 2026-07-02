@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
-import { Loader2 } from 'lucide-react'
+import { Loader2, AlertTriangle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
+import { Checkbox } from '@/components/ui/checkbox'
 import {
   Dialog,
   DialogContent,
@@ -46,6 +47,7 @@ export function ServerFormDialog({
   const [serviceName, setServiceName] = useState('xray')
   const [hyConfigPath, setHyConfigPath] = useState('/etc/sing-box/config.json')
   const [hyServiceName, setHyServiceName] = useState('sing-box')
+  const [wipeExisting, setWipeExisting] = useState(false)
 
   useEffect(() => {
     if (!open) return
@@ -60,6 +62,7 @@ export function ServerFormDialog({
     setServiceName(server?.xray_service_name ?? 'xray')
     setHyConfigPath(server?.hysteria_config_path ?? '/etc/sing-box/config.json')
     setHyServiceName(server?.hysteria_service_name ?? 'sing-box')
+    setWipeExisting(false)
   }, [open, server])
 
   const pending = createServer.isPending || updateServer.isPending
@@ -78,6 +81,7 @@ export function ServerFormDialog({
       xray_service_name: serviceName.trim() || 'xray',
       hysteria_config_path: hyConfigPath.trim() || '/etc/sing-box/config.json',
       hysteria_service_name: hyServiceName.trim() || 'sing-box',
+      wipe_existing: !isEdit && wipeExisting,
     }
 
     try {
@@ -253,6 +257,31 @@ export function ServerFormDialog({
               </div>
             </div>
           </div>
+
+          {!isEdit && (
+            <div className="space-y-2 rounded-md border border-destructive/40 bg-destructive/5 p-3">
+              <label htmlFor="sv-wipe" className="flex cursor-pointer items-start gap-3">
+                <Checkbox
+                  id="sv-wipe"
+                  checked={wipeExisting}
+                  onCheckedChange={(v) => setWipeExisting(v === true)}
+                  className="mt-0.5"
+                />
+                <span className="space-y-1">
+                  <span className="flex items-center gap-1.5 text-sm font-medium">
+                    <AlertTriangle className="h-4 w-4 text-destructive" />
+                    Wipe existing proxy setup before installing
+                  </span>
+                  <span className="block text-xs text-muted-foreground">
+                    Removes competing proxy/VPN stacks and panels (xray, sing-box, hysteria, v2ray,
+                    trojan, shadowsocks, 3x-ui, marzban…) and all Docker containers to free
+                    conflicting ports and memory. The OS, SSH access and networking are left intact.
+                    <span className="font-medium text-foreground"> Irreversible.</span>
+                  </span>
+                </span>
+              </label>
+            </div>
+          )}
 
           <DialogFooter>
             <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>

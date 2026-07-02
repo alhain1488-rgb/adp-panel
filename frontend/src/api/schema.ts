@@ -1820,6 +1820,11 @@ export interface components {
             hysteria_config_path: string;
             /** @default sing-box */
             hysteria_service_name: string;
+            /**
+             * @description One-time provision option (not stored). If true, the panel removes competing proxy/VPN stacks and panels on the node before installing the engines, freeing conflicting ports and memory. OS/SSH untouched.
+             * @default false
+             */
+            wipe_existing: boolean;
         };
         ServerStats: {
             /** Format: float */
