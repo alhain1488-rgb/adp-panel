@@ -9,10 +9,12 @@ import {
   RefreshCw,
   Trash2,
   Loader2,
+  ListFilter,
 } from 'lucide-react'
 import { PageHeader } from '@/components/common/page-header'
 import { EmptyState } from '@/components/common/misc'
 import { CopyButton } from '@/components/common/copy-button'
+import { QrCode } from '@/components/common/qr-code'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -268,6 +270,41 @@ function ClientRow({ client }: { client: Client }) {
   )
 }
 
+// A shared, static list of RU services that should route directly (bypass the
+// VPN). Served as a plain file by the panel; users plug the URL into their
+// client's direct/bypass routing, or scan the QR to open it.
+function DirectDomainsCard() {
+  const url = `${window.location.origin}/ru-direct-domains.txt`
+  return (
+    <Card className="mb-6 p-5">
+      <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0 space-y-2">
+          <div className="flex items-center gap-2">
+            <ListFilter className="h-5 w-5 text-primary" />
+            <h3 className="font-semibold">Direct domains (bypass VPN)</h3>
+          </div>
+          <p className="max-w-xl text-sm text-muted-foreground">
+            A list of Russian services that should go directly, not through the proxy. Add this URL
+            to your client's direct/bypass routing rules, or scan the QR to open it.
+          </p>
+          <div className="flex items-center gap-2">
+            <Input
+              readOnly
+              value={url}
+              onFocus={(e) => e.currentTarget.select()}
+              className="max-w-md font-mono text-xs"
+            />
+            <CopyButton value={url} size="sm" label="URL" />
+          </div>
+        </div>
+        <div className="shrink-0 self-center">
+          <QrCode text={url} size={132} />
+        </div>
+      </div>
+    </Card>
+  )
+}
+
 export default function ClientsPage() {
   const { data: clients, isLoading } = useClients()
   const [createOpen, setCreateOpen] = useState(false)
@@ -280,6 +317,8 @@ export default function ClientsPage() {
           Add client
         </Button>
       </PageHeader>
+
+      <DirectDomainsCard />
 
       {isLoading || !clients ? (
         <div className="space-y-3">
