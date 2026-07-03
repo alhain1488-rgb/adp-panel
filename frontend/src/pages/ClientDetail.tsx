@@ -214,14 +214,19 @@ function AmneziaWGSection({ clientId, enabled }: { clientId: number; enabled: bo
                   <div className="text-sm font-medium">
                     {cfg.server_name} · <span className="font-mono">{tag}</span>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <Input
-                      readOnly
-                      value={vpn}
-                      onFocus={(e) => e.currentTarget.select()}
-                      className="font-mono text-xs"
-                    />
-                    <CopyButton value={vpn} label="vpn://" />
+                  <div className="space-y-1.5">
+                    <div className="font-mono text-[11px] uppercase tracking-wide text-muted-foreground">
+                      vpn://
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Input
+                        readOnly
+                        value={vpn}
+                        onFocus={(e) => e.currentTarget.select()}
+                        className="font-mono text-xs"
+                      />
+                      <CopyButton value={vpn} className="shrink-0" />
+                    </div>
                   </div>
                   <Button variant="outline" size="sm" onClick={() => downloadText(`${tag}.conf`, conf)}>
                     <Download className="h-4 w-4" />
