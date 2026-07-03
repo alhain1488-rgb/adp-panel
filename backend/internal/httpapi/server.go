@@ -148,6 +148,7 @@ func Router(d Deps) http.Handler {
 				r.Put("/inbounds", ch.setInbounds)
 				r.Post("/rotate-token", ch.rotateToken)
 				r.Get("/links", ch.links)
+				r.Get("/amneziawg", ch.amneziawg)
 				r.Get("/qrcode", ch.qrcode)
 				r.Get("/config", ch.config)
 			})

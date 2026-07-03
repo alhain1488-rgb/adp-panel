@@ -4,7 +4,11 @@ import userEvent from '@testing-library/user-event'
 import { renderWithProviders } from '@/test/utils'
 import LoginPage from './Login'
 
-beforeEach(() => localStorage.clear())
+beforeEach(() => {
+  localStorage.clear()
+  // The UI defaults to Russian; pin English so these label assertions are stable.
+  localStorage.setItem('adp_lang', 'en')
+})
 
 describe('LoginPage', () => {
   it('advances to the TOTP step after valid credentials', async () => {

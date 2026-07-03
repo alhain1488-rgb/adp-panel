@@ -83,7 +83,7 @@ func newTestEnv(t *testing.T) *testEnv {
 	inboundsSvc := inbounds.NewService(st)
 	clientsSvc := clients.NewService(st)
 	subscriptionSvc := subscription.NewService(st, clientsSvc)
-	syncSvc := syncpkg.NewService(st, serversSvc)
+	syncSvc := syncpkg.NewService(st, serversSvc, clientsSvc)
 
 	router := Router(Deps{
 		DB:           database,

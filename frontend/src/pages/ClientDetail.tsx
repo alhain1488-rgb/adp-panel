@@ -40,6 +40,7 @@ import { cn } from '@/lib/utils'
 import { useT } from '@/i18n/i18n'
 import {
   useClient,
+  useClientAmneziaWG,
   useClientLinks,
   useDeleteClient,
   useRotateToken,
@@ -179,6 +180,66 @@ function LinkRow({ link }: { link: ClientLink }) {
   )
 }
 
+function downloadText(filename: string, text: string) {
+  const url = URL.createObjectURL(new Blob([text], { type: 'text/plain' }))
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  URL.revokeObjectURL(url)
+}
+
+// AmneziaWG configs (one per granted AmneziaWG inbound): a downloadable wg-quick
+// .conf for the AmneziaWG app plus the vpn:// deep link (copy + QR) for the
+// AmneziaVPN app. Rendered only when the client actually has AmneziaWG grants.
+function AmneziaWGSection({ clientId, enabled }: { clientId: number; enabled: boolean }) {
+  const t = useT()
+  const { data } = useClientAmneziaWG(clientId)
+  if (!enabled || !data || data.length === 0) return null
+  return (
+    <div>
+      <h3 className="mb-1 text-sm font-medium">{t('clientDetail.awg.title')}</h3>
+      <p className="mb-3 text-xs text-muted-foreground">{t('clientDetail.awg.hint')}</p>
+      <div className="space-y-3">
+        {data.map((cfg) => {
+          const vpn = cfg.vpn_link ?? ''
+          const conf = cfg.conf ?? ''
+          const tag = cfg.tag ?? 'amneziawg'
+          return (
+            <Card key={cfg.inbound_id} className="p-4">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                <div className="min-w-0 flex-1 space-y-3">
+                  <div className="text-sm font-medium">
+                    {cfg.server_name} · <span className="font-mono">{tag}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      readOnly
+                      value={vpn}
+                      onFocus={(e) => e.currentTarget.select()}
+                      className="font-mono text-xs"
+                    />
+                    <CopyButton value={vpn} label="vpn://" />
+                  </div>
+                  <Button variant="outline" size="sm" onClick={() => downloadText(`${tag}.conf`, conf)}>
+                    <Download className="h-4 w-4" />
+                    {t('clientDetail.awg.downloadConf')}
+                  </Button>
+                </div>
+                <div className="shrink-0 self-center">
+                  <QrCode text={vpn} size={160} />
+                </div>
+              </div>
+            </Card>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 function ConnectionTab({ client }: { client: Client }) {
   const { toast } = useToast()
   const t = useT()
@@ -278,6 +339,8 @@ function ConnectionTab({ client }: { client: Client }) {
           </Card>
         )}
       </div>
+
+      <AmneziaWGSection clientId={client.id} enabled={client.enabled ?? false} />
 
       <Card>
         <CardHeader className="pb-3">

@@ -64,7 +64,7 @@ func genSelfSigned(t *testing.T, dir string) {
 func planFor(t *testing.T, engine protocols.Engine) []byte {
 	t.Helper()
 	st, serverID := newFixture(t)
-	svc := NewService(st, &fakeConnector{})
+	svc := NewService(st, &fakeConnector{}, nil)
 	srv, _ := st.GetServer(context.Background(), serverID)
 	plans, err := svc.plan(context.Background(), srv)
 	if err != nil {

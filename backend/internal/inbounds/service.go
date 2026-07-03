@@ -8,9 +8,13 @@ import (
 	"encoding/json"
 	"errors"
 
+	"github.com/adp/panel/internal/amneziawg"
 	"github.com/adp/panel/internal/protocols"
 	"github.com/adp/panel/internal/store"
 )
+
+// defaultAWGPort is the listen port used for a new AmneziaWG inbound if unset.
+const defaultAWGPort = 51820
 
 // ErrUnknownProtocol is returned for a protocol not in the registry.
 var ErrUnknownProtocol = errors.New("inbounds: unknown protocol")
@@ -94,6 +98,60 @@ func ensureRealityKeys(in *Input) error {
 	return nil
 }
 
+// ensureAmneziaWG fills in the server-side interface secrets and 2.0 defaults
+// for an AmneziaWG inbound: a server keypair, tunnel subnet, MTU/DNS/NAT and the
+// obfuscation param-set. Client input never sets these; they are generated once
+// and reused (the obfuscation set must be identical for every client).
+func ensureAmneziaWG(in *Input) error {
+	if in.Protocol != "amneziawg" {
+		return nil
+	}
+	if in.Port == 0 {
+		in.Port = defaultAWGPort
+	}
+	if in.Settings == nil {
+		in.Settings = map[string]any{}
+	}
+	s := in.Settings
+
+	priv, _ := s["private_key"].(string)
+	if priv == "" || placeholder(priv) {
+		pk, pub, err := amneziawg.GenerateKey()
+		if err != nil {
+			return err
+		}
+		s["private_key"], s["public_key"] = pk, pub
+	} else if pub, _ := s["public_key"].(string); pub == "" {
+		pub, err := amneziawg.PublicFromPrivate(priv)
+		if err != nil {
+			return err
+		}
+		s["public_key"] = pub
+	}
+
+	setDefault(s, "subnet", "10.9.9.0/24")
+	setDefault(s, "dns", "1.1.1.1")
+	if _, ok := s["mtu"]; !ok {
+		s["mtu"] = 1280
+	}
+	if _, ok := s["nat"]; !ok {
+		s["nat"] = true
+	}
+	if _, ok := s["params"].(map[string]any); !ok {
+		b, _ := json.Marshal(amneziawg.DefaultParams())
+		var m map[string]any
+		_ = json.Unmarshal(b, &m)
+		s["params"] = m
+	}
+	return nil
+}
+
+func setDefault(m map[string]any, key, val string) {
+	if v, ok := m[key].(string); !ok || v == "" {
+		m[key] = val
+	}
+}
+
 func placeholder(s string) bool {
 	return len(s) > 0 && s[0] == '<'
 }
@@ -119,6 +177,9 @@ func (s *Service) Create(ctx context.Context, serverID int64, in Input) (*store.
 	if err := ensureRealityKeys(&in); err != nil {
 		return nil, err
 	}
+	if err := ensureAmneziaWG(&in); err != nil {
+		return nil, err
+	}
 	return s.store.CreateInbound(ctx, serverID, s.toParams(in))
 }
 
@@ -128,6 +189,9 @@ func (s *Service) Update(ctx context.Context, id int64, in Input) (*store.Inboun
 		return nil, ErrUnknownProtocol
 	}
 	if err := ensureRealityKeys(&in); err != nil {
+		return nil, err
+	}
+	if err := ensureAmneziaWG(&in); err != nil {
 		return nil, err
 	}
 	return s.store.UpdateInbound(ctx, id, s.toParams(in))

@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from './client'
 import type {
   Admin,
+  AmneziaWGConfig,
   AuditLogPage,
   Client,
   ClientInput,
@@ -171,6 +172,14 @@ export function useClientLinks(id: number) {
   return useQuery({
     queryKey: qk.clientLinks(id),
     queryFn: () => api.get<ClientLink[]>(`/api/clients/${id}/links`),
+    enabled: id > 0,
+  })
+}
+
+export function useClientAmneziaWG(id: number) {
+  return useQuery({
+    queryKey: [...qk.clientLinks(id), 'amneziawg'],
+    queryFn: () => api.get<AmneziaWGConfig[]>(`/api/clients/${id}/amneziawg`),
     enabled: id > 0,
   })
 }

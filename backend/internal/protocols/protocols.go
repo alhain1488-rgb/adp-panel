@@ -10,8 +10,9 @@ import "encoding/json"
 type Engine string
 
 const (
-	EngineXray     Engine = "xray"     // config.json for xray-core
-	EngineHysteria Engine = "hysteria" // sing-box config for Hysteria2
+	EngineXray      Engine = "xray"      // config.json for xray-core
+	EngineHysteria  Engine = "hysteria"  // sing-box config for Hysteria2
+	EngineAmneziaWG Engine = "amneziawg" // awg-quick .conf for AmneziaWG 2.0
 )
 
 // Inbound is the protocol-agnostic inbound definition passed to adapters.

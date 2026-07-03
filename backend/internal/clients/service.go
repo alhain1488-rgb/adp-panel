@@ -9,9 +9,11 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 
 	"github.com/google/uuid"
 
+	"github.com/adp/panel/internal/amneziawg"
 	"github.com/adp/panel/internal/protocols"
 	"github.com/adp/panel/internal/store"
 )
@@ -23,6 +25,37 @@ type Service struct {
 
 // NewService builds a clients Service.
 func NewService(st *store.Store) *Service { return &Service{store: st} }
+
+// WGKeypair returns the client's AmneziaWG/WireGuard keypair, generating and
+// persisting it on first use. The keypair is per-client and stable across
+// subscription-token rotation (it lives in clients.params_json, not the token).
+func (s *Service) WGKeypair(ctx context.Context, clientID int64) (priv, pub string, err error) {
+	raw, err := s.store.GetClientParams(ctx, clientID)
+	if err != nil {
+		return "", "", err
+	}
+	m := map[string]any{}
+	_ = json.Unmarshal([]byte(raw), &m)
+	if p, ok := m["awg_priv"].(string); ok && p != "" {
+		if q, ok := m["awg_pub"].(string); ok && q != "" {
+			return p, q, nil
+		}
+	}
+	priv, pub, err = amneziawg.GenerateKey()
+	if err != nil {
+		return "", "", err
+	}
+	m["awg_priv"] = priv
+	m["awg_pub"] = pub
+	b, err := json.Marshal(m)
+	if err != nil {
+		return "", "", err
+	}
+	if err := s.store.SetClientParams(ctx, clientID, string(b)); err != nil {
+		return "", "", err
+	}
+	return priv, pub, nil
+}
 
 // Input holds the writable client fields.
 type Input struct {
@@ -135,6 +168,65 @@ func (s *Service) RotateToken(ctx context.Context, id int64) (*store.Client, err
 		return nil, err
 	}
 	return s.store.RotateClientToken(ctx, id, token)
+}
+
+// AWGClientConfig is one AmneziaWG client config (one per granted AmneziaWG
+// inbound): the wg-quick .conf for the AmneziaWG app and the vpn:// deep link
+// for the AmneziaVPN app.
+type AWGClientConfig struct {
+	InboundID  int64  `json:"inbound_id"`
+	Tag        string `json:"tag"`
+	ServerName string `json:"server_name"`
+	ServerHost string `json:"server_host"`
+	Conf       string `json:"conf"`
+	VpnLink    string `json:"vpn_link"`
+}
+
+// AmneziaWGConfigs builds the client's AmneziaWG configs across every AmneziaWG
+// inbound it is granted. The client's tunnel IP is derived deterministically
+// from its id (matching what the sync engine writes into the server [Peer]).
+func (s *Service) AmneziaWGConfigs(ctx context.Context, id int64) ([]AWGClientConfig, error) {
+	c, err := s.store.GetClient(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	inbounds, err := s.store.ListActiveClientInbounds(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	priv, pub, err := s.WGKeypair(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+
+	out := []AWGClientConfig{}
+	for i := range inbounds {
+		iws := inbounds[i]
+		if iws.Protocol != "amneziawg" {
+			continue
+		}
+		iface, err := amneziawg.ParseInterface(iws.SettingsJSON, iws.Port)
+		if err != nil {
+			return nil, err
+		}
+		ip, err := amneziawg.HostIP(iface.Subnet, int(id)+1)
+		if err != nil {
+			return nil, err
+		}
+		peer := amneziawg.Peer{Name: c.Name, PrivateKey: priv, PublicKey: pub, Address: ip + "/32"}
+		endpoint := fmt.Sprintf("%s:%d", iws.ServerHost, iface.ListenPort)
+		vpn, err := amneziawg.VpnLink(amneziawg.VpnLinkInput{
+			Iface: iface, Peer: peer, Host: iws.ServerHost, Description: c.Name,
+		})
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, AWGClientConfig{
+			InboundID: iws.ID, Tag: iws.Tag, ServerName: iws.ServerName, ServerHost: iws.ServerHost,
+			Conf: amneziawg.ClientConfig(iface, peer, endpoint), VpnLink: vpn,
+		})
+	}
+	return out, nil
 }
 
 // Links builds the connection URIs for a client across all its active inbounds.

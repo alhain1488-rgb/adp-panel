@@ -379,4 +379,8 @@ export const dict: Record<string, { en: string; ru: string }> = {
   "directDomains.hint.singbox": { en: "Add as a sing-box rule_set (type: remote, format: source) and route it to \"direct\".", ru: "Добавьте как sing-box rule_set (type: remote, format: source) и направьте на «direct»." },
   "directDomains.hint.clash": { en: "Add as a Clash rule-provider (behavior: domain), then RULE-SET,<name>,DIRECT.", ru: "Добавьте как Clash rule-provider (behavior: domain), затем RULE-SET,<name>,DIRECT." },
   "directDomains.hint.txt": { en: "A plain domain list — import it into your app's split-tunnel / \"direct sites\", or use it as a Clash text rule-provider.", ru: "Обычный список доменов — импортируйте в раздельный туннель / «прямые сайты» приложения, либо используйте как текстовый rule-provider Clash." },
+  "inboundForm.awgNote": { en: "The server keypair, tunnel subnet and the AmneziaWG 2.0 obfuscation set (Jc/S1–S4/H1–H4/I1) are generated automatically. Just set a tag and a listen port. Clients need the AmneziaVPN or AmneziaWG app.", ru: "Серверный ключ, туннельная подсеть и набор обфускации AmneziaWG 2.0 (Jc/S1–S4/H1–H4/I1) генерируются автоматически. Достаточно задать имя и порт. Клиентам нужно приложение AmneziaVPN или AmneziaWG." },
+  "clientDetail.awg.title": { en: "AmneziaWG", ru: "AmneziaWG" },
+  "clientDetail.awg.hint": { en: "Import the vpn:// link into the AmneziaVPN app (scan the QR), or download the .conf for the AmneziaWG app.", ru: "Импортируйте ссылку vpn:// в приложение AmneziaVPN (отсканируйте QR) или скачайте .conf для приложения AmneziaWG." },
+  "clientDetail.awg.downloadConf": { en: "Download .conf", ru: "Скачать .conf" },
 }

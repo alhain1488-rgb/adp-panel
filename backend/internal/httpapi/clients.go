@@ -292,6 +292,26 @@ func (h *clientsHandler) links(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
+// amneziawg returns the client's AmneziaWG configs (.conf + vpn://) for each
+// granted AmneziaWG inbound.
+func (h *clientsHandler) amneziawg(w http.ResponseWriter, r *http.Request) {
+	id, ok := idParam(r)
+	if !ok {
+		writeError(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+	cfgs, err := h.svc.AmneziaWGConfigs(r.Context(), id)
+	if errors.Is(err, store.ErrNotFound) {
+		writeError(w, http.StatusNotFound, "client not found")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to build amneziawg configs")
+		return
+	}
+	writeJSON(w, http.StatusOK, cfgs)
+}
+
 func (h *clientsHandler) qrcode(w http.ResponseWriter, r *http.Request) {
 	c, ok := h.load(w, r)
 	if !ok {

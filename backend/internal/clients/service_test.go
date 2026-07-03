@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/adp/panel/internal/amneziawg"
 	"github.com/adp/panel/internal/db"
 	"github.com/adp/panel/internal/store"
 )
@@ -38,6 +39,42 @@ func TestCreate_GeneratesUniqueCredentials(t *testing.T) {
 	}
 	if !a.Enabled {
 		t.Error("new client should be enabled")
+	}
+}
+
+func TestWGKeypair_GeneratedOnceAndStable(t *testing.T) {
+	svc, _, ctx := newSvc(t)
+	c, err := svc.Create(ctx, Input{Name: "wg"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	priv, pub, err := svc.WGKeypair(ctx, c.ID)
+	if err != nil || priv == "" || pub == "" {
+		t.Fatalf("keypair: %v (%q/%q)", err, priv, pub)
+	}
+	// The stored public key derives from the stored private key.
+	if got, err := amneziawg.PublicFromPrivate(priv); err != nil || got != pub {
+		t.Fatalf("public does not match private: %v", err)
+	}
+	// A second call returns the SAME persisted keypair (not a fresh one).
+	priv2, pub2, err := svc.WGKeypair(ctx, c.ID)
+	if err != nil || priv2 != priv || pub2 != pub {
+		t.Fatalf("keypair not stable across calls: %v", err)
+	}
+	// Rotating the subscription token must NOT change the keypair.
+	if _, err := svc.RotateToken(ctx, c.ID); err != nil {
+		t.Fatalf("rotate: %v", err)
+	}
+	priv3, _, _ := svc.WGKeypair(ctx, c.ID)
+	if priv3 != priv {
+		t.Fatal("keypair changed after token rotation")
+	}
+	// Different clients get different keypairs.
+	c2, _ := svc.Create(ctx, Input{Name: "wg2"})
+	privB, _, _ := svc.WGKeypair(ctx, c2.ID)
+	if privB == priv {
+		t.Fatal("two clients share a keypair")
 	}
 }
 

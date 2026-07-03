@@ -1117,6 +1117,47 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/clients/{id}/amneziawg": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["IdPath"];
+            };
+            cookie?: never;
+        };
+        /** AmneziaWG configs (.conf + vpn://) per granted AmneziaWG inbound */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: components["parameters"]["IdPath"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description AmneziaWG configs */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AmneziaWGConfig"][];
+                    };
+                };
+                404: components["responses"]["NotFound"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/clients/{id}/qrcode": {
         parameters: {
             query?: {
@@ -1699,9 +1740,20 @@ export interface components {
          * @description Target engine an inbound belongs to.
          * @enum {string}
          */
-        Engine: "xray" | "hysteria";
+        Engine: "xray" | "hysteria" | "amneziawg";
         /** @enum {string} */
-        Protocol: "vless" | "vmess" | "trojan" | "shadowsocks" | "hysteria2";
+        Protocol: "vless" | "vmess" | "trojan" | "shadowsocks" | "hysteria2" | "amneziawg";
+        /** @description One AmneziaWG client config (per granted AmneziaWG inbound). */
+        AmneziaWGConfig: {
+            inbound_id?: number;
+            tag?: string;
+            server_name?: string;
+            server_host?: string;
+            /** @description wg-quick .conf for the AmneziaWG app */
+            conf?: string;
+            /** @description vpn:// deep link for the AmneziaVPN app */
+            vpn_link?: string;
+        };
         OperationResult: {
             ok: boolean;
             message?: string;

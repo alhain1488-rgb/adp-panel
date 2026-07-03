@@ -539,6 +539,24 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
 
+  /api/clients/{id}/amneziawg:
+    parameters:
+      - $ref: '#/components/parameters/IdPath'
+    get:
+      tags: [Clients]
+      summary: AmneziaWG configs (.conf + vpn://) per granted AmneziaWG inbound
+      responses:
+        '200':
+          description: AmneziaWG configs
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AmneziaWGConfig'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
   /api/clients/{id}/qrcode:
     parameters:
       - $ref: '#/components/parameters/IdPath'
@@ -885,12 +903,23 @@ components:
 
     Engine:
       type: string
-      enum: [xray, hysteria]
+      enum: [xray, hysteria, amneziawg]
       description: Target engine an inbound belongs to.
 
     Protocol:
       type: string
-      enum: [vless, vmess, trojan, shadowsocks, hysteria2]
+      enum: [vless, vmess, trojan, shadowsocks, hysteria2, amneziawg]
+
+    AmneziaWGConfig:
+      type: object
+      description: One AmneziaWG client config (per granted AmneziaWG inbound).
+      properties:
+        inbound_id: { type: integer }
+        tag: { type: string }
+        server_name: { type: string }
+        server_host: { type: string }
+        conf: { type: string, description: wg-quick .conf for the AmneziaWG app }
+        vpn_link: { type: string, description: 'vpn:// deep link for the AmneziaVPN app' }
 
     OperationResult:
       type: object

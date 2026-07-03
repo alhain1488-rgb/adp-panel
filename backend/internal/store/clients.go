@@ -304,3 +304,32 @@ func scanInboundsWithServer(rows *sql.Rows) ([]InboundWithServer, error) {
 	}
 	return out, rows.Err()
 }
+
+// GetClientParams returns the client's per-client protocol params JSON blob
+// (defaults to "{}" for a client that has none yet).
+func (s *Store) GetClientParams(ctx context.Context, id int64) (string, error) {
+	var v string
+	err := s.db.QueryRowContext(ctx, "SELECT params_json FROM clients WHERE id = ?", id).Scan(&v)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", ErrNotFound
+	}
+	if err != nil {
+		return "", err
+	}
+	if v == "" {
+		v = "{}"
+	}
+	return v, nil
+}
+
+// SetClientParams writes the client's per-client protocol params JSON blob.
+func (s *Store) SetClientParams(ctx context.Context, id int64, paramsJSON string) error {
+	res, err := s.db.ExecContext(ctx, "UPDATE clients SET params_json = ? WHERE id = ?", paramsJSON, id)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}

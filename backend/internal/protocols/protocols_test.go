@@ -371,3 +371,18 @@ func TestParseMbps(t *testing.T) {
 		}
 	}
 }
+
+func TestAmneziaWGRegistered(t *testing.T) {
+	eng, ok := EngineOf("amneziawg")
+	if !ok || eng != EngineAmneziaWG {
+		t.Fatalf("amneziawg not registered as its engine: %q ok=%v", eng, ok)
+	}
+	p, ok := Get("amneziawg")
+	if !ok || p.Name() != "amneziawg" {
+		t.Fatal("amneziawg adapter not retrievable")
+	}
+	// It is not a JSON-fragment engine: BuildInbound/BuildLink signal engine-handled.
+	if _, err := p.BuildInbound(Inbound{}, nil); err == nil {
+		t.Error("BuildInbound should return an engine-handled error")
+	}
+}

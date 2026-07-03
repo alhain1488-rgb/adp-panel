@@ -2,15 +2,24 @@ package sync
 
 import (
 	"context"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/adp/panel/internal/amneziawg"
 	"github.com/adp/panel/internal/db"
 	"github.com/adp/panel/internal/ssh"
 	"github.com/adp/panel/internal/ssh/sshtest"
 	"github.com/adp/panel/internal/store"
 )
+
+// fakeKeyer returns deterministic per-client keys for AmneziaWG peer tests.
+type fakeKeyer struct{}
+
+func (fakeKeyer) WGKeypair(_ context.Context, id int64) (string, string, error) {
+	return fmt.Sprintf("PRIV%d", id), fmt.Sprintf("PUB%d", id), nil
+}
 
 // fakeConnector hands out a preconfigured runner (Sync ignores the returned server).
 type fakeConnector struct {
@@ -78,7 +87,7 @@ func newFixture(t *testing.T) (*store.Store, int64) {
 func TestSync_PushesBothEngines(t *testing.T) {
 	st, serverID := newFixture(t)
 	runner := &sshtest.MockRunner{} // nil handler → every command exits 0
-	svc := NewService(st, &fakeConnector{runner: runner})
+	svc := NewService(st, &fakeConnector{runner: runner}, nil)
 
 	results, err := svc.Sync(context.Background(), serverID)
 	if err != nil {
@@ -115,14 +124,14 @@ func TestSync_PushesBothEngines(t *testing.T) {
 
 func TestSync_Idempotent(t *testing.T) {
 	st, serverID := newFixture(t)
-	svc := NewService(st, &fakeConnector{runner: &sshtest.MockRunner{}})
+	svc := NewService(st, &fakeConnector{runner: &sshtest.MockRunner{}}, nil)
 
 	if _, err := svc.Sync(context.Background(), serverID); err != nil {
 		t.Fatalf("first sync: %v", err)
 	}
 	// Second sync with an unchanged config must skip both engines (no restart).
 	runner2 := &sshtest.MockRunner{}
-	svc2 := NewService(st, &fakeConnector{runner: runner2})
+	svc2 := NewService(st, &fakeConnector{runner: runner2}, nil)
 	results, err := svc2.Sync(context.Background(), serverID)
 	if err != nil {
 		t.Fatalf("second sync: %v", err)
@@ -147,7 +156,7 @@ func TestSync_ValidationFailureRestoresBackup(t *testing.T) {
 			return ssh.Result{}, nil
 		},
 	}
-	svc := NewService(st, &fakeConnector{runner: runner})
+	svc := NewService(st, &fakeConnector{runner: runner}, nil)
 
 	_, err := svc.Sync(context.Background(), serverID)
 	if err == nil {
@@ -175,7 +184,7 @@ func TestSync_NotProvisioned(t *testing.T) {
 	if err := st.SetProvision(context.Background(), serverID, "pending", "", ""); err != nil {
 		t.Fatal(err)
 	}
-	svc := NewService(st, &fakeConnector{runner: &sshtest.MockRunner{}})
+	svc := NewService(st, &fakeConnector{runner: &sshtest.MockRunner{}}, nil)
 	if _, err := svc.Sync(context.Background(), serverID); err != ErrNotProvisioned {
 		t.Fatalf("err = %v, want ErrNotProvisioned", err)
 	}
@@ -183,7 +192,7 @@ func TestSync_NotProvisioned(t *testing.T) {
 
 func TestBuildConfigs_ShapeAndClients(t *testing.T) {
 	st, serverID := newFixture(t)
-	svc := NewService(st, &fakeConnector{runner: &sshtest.MockRunner{}})
+	svc := NewService(st, &fakeConnector{runner: &sshtest.MockRunner{}}, nil)
 	srv, _ := st.GetServer(context.Background(), serverID)
 
 	plans, err := svc.plan(context.Background(), srv)
@@ -209,5 +218,41 @@ func TestBuildConfigs_ShapeAndClients(t *testing.T) {
 				t.Errorf("hysteria config missing client password: %s", body)
 			}
 		}
+	}
+}
+
+func TestBuildAWGPlan(t *testing.T) {
+	spriv, spub, err := amneziawg.GenerateKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	settings := fmt.Sprintf(`{"private_key":%q,"public_key":%q,"subnet":"10.9.9.0/24",`+
+		`"mtu":1280,"dns":"1.1.1.1","nat":true,"params":{"jc":4,"jmin":40,"jmax":90,`+
+		`"s1":50,"s2":40,"s3":12,"s4":8,"h1":"111","h2":"222","h3":"333","h4":"444","i1":"<r 128>"}}`,
+		spriv, spub)
+	in := store.Inbound{ID: 7, Tag: "awg", Protocol: "amneziawg", Port: 51820, SettingsJSON: settings}
+	grantees := []store.Client{{ID: 5, Name: "phone"}}
+
+	svc := &Service{keyer: fakeKeyer{}}
+	plan, err := svc.buildAWGPlan(context.Background(), in, grantees)
+	if err != nil {
+		t.Fatalf("buildAWGPlan: %v", err)
+	}
+	if plan.path != "/etc/amnezia/amneziawg/awg7.conf" || plan.service != "awg-quick@awg7" || plan.key != "amneziawg:awg7" {
+		t.Fatalf("plan routing: path=%q service=%q key=%q", plan.path, plan.service, plan.key)
+	}
+	c := string(plan.content)
+	for _, want := range []string{
+		"[Interface]", "PrivateKey = " + spriv, "Address = 10.9.9.1/24", "ListenPort = 51820",
+		"Jc = 4", "H1 = 111", "PostUp", // server obfuscation + NAT
+		"[Peer]", "# phone", "PublicKey = PUB5", "AllowedIPs = 10.9.9.6/32", // client id 5 -> .6
+	} {
+		if !strings.Contains(c, want) {
+			t.Errorf("server .conf missing %q", want)
+		}
+	}
+	// The client-only CPS packet must not leak into the server interface.
+	if strings.Contains(c, "I1 = ") {
+		t.Error("server .conf should not carry I1")
 	}
 }

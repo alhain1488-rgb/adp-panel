@@ -43,6 +43,37 @@ const (
 	CmdEnsureCertDir = `mkdir -p /etc/sing-box`
 )
 
+// CmdInstallAWG installs the AmneziaWG 2.0 engine on the node (best-effort;
+// always exits 0 so a node that won't host AmneziaWG isn't blocked). It sets up
+// amneziawg-tools (awg-quick + the awg-quick@ systemd template) via the Amnezia
+// PPA or a source build, installs amneziawg-go (userspace, the confirmed 2.0
+// implementation) via `go install`, points awg-quick at that userspace impl, and
+// enables IP forwarding. NOTE: this path needs validation on a real node — the
+// exact awg config dir / userspace wiring can vary by distro/version.
+const CmdInstallAWG = installEnv + `
+set +e
+sysctl -w net.ipv4.ip_forward=1 >/dev/null 2>&1
+grep -q '^net.ipv4.ip_forward=1' /etc/sysctl.conf || echo 'net.ipv4.ip_forward=1' >> /etc/sysctl.conf
+mkdir -p /etc/amnezia/amneziawg
+if ! command -v awg-quick >/dev/null 2>&1; then
+  apt-get install -y --no-install-recommends software-properties-common iptables git build-essential >/dev/null 2>&1
+  add-apt-repository -y ppa:amnezia/ppa >/dev/null 2>&1 && apt-get update -y >/dev/null 2>&1
+  apt-get install -y amneziawg-tools >/dev/null 2>&1
+  if ! command -v awg-quick >/dev/null 2>&1; then
+    git clone --depth 1 https://github.com/amnezia-vpn/amneziawg-tools /tmp/awg-tools >/dev/null 2>&1
+    make -C /tmp/awg-tools/src >/dev/null 2>&1 && make -C /tmp/awg-tools/src install WITH_SYSTEMDUNITS=yes >/dev/null 2>&1
+  fi
+fi
+if ! command -v amneziawg-go >/dev/null 2>&1; then
+  command -v go >/dev/null 2>&1 || apt-get install -y --no-install-recommends golang-go >/dev/null 2>&1
+  GOBIN=/usr/local/bin go install github.com/amnezia-vpn/amneziawg-go@latest >/dev/null 2>&1
+fi
+mkdir -p /etc/systemd/system/awg-quick@.service.d
+printf '[Service]\nEnvironment=WG_QUICK_USERSPACE_IMPLEMENTATION=amneziawg-go\n' > /etc/systemd/system/awg-quick@.service.d/userspace.conf
+systemctl daemon-reload >/dev/null 2>&1
+echo "[awg] tools=$(command -v awg-quick || echo none) go=$(command -v amneziawg-go || echo none)"
+exit 0`
+
 // CmdCleanNode is the optional, opt-in pre-provision cleanup. It removes
 // competing proxy/VPN stacks and panels so their services stop squatting the
 // ports and memory the panel's engines need. It is deliberately *targeted*: it
@@ -143,6 +174,10 @@ func (p *Provisioner) Provision(ctx context.Context, r ssh.Runner, host, hyServi
 	if err != nil {
 		return nil, err
 	}
+	// AmneziaWG is a best-effort third engine: install it, but never fail the
+	// whole provision over it (a node that won't host AmneziaWG still installs).
+	p.ensureAmneziaWG(ctx, r)
+
 	certPath, keyPath, err := p.ensureCert(ctx, r, host)
 	if err != nil {
 		return nil, err
@@ -178,6 +213,12 @@ func (p *Provisioner) clean(ctx context.Context, r ssh.Runner) error {
 		return fmt.Errorf("provision: clean node: %w", err)
 	}
 	return nil
+}
+
+// ensureAmneziaWG installs the AmneziaWG 2.0 engine (best-effort; errors are
+// swallowed so provisioning of the core engines is never blocked by it).
+func (p *Provisioner) ensureAmneziaWG(ctx context.Context, r ssh.Runner) {
+	_, _ = r.Run(ctx, CmdInstallAWG)
 }
 
 // aptPrep updates apt and pre-installs the installers' dependencies.

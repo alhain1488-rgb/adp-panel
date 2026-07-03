@@ -453,6 +453,22 @@ export const handlers = [
       })
     return json(links)
   }),
+  http.get('/api/clients/:id/amneziawg', ({ request, params }) => {
+    if (!requireAuth(request)) return unauthorized()
+    const c = clients.find((x) => x.id === Number(params.id))
+    if (!c) return notFound()
+    // Demo: expose one sample AmneziaWG config so the UI section renders.
+    return json([
+      {
+        inbound_id: 9001,
+        tag: 'awg-mobile',
+        server_name: servers[0]?.name ?? 'node',
+        server_host: servers[0]?.host ?? 'node.example.com',
+        conf: '[Interface]\nPrivateKey = <client>\nAddress = 10.9.9.2/32\nDNS = 1.1.1.1\nMTU = 1280\nJc = 4\nJmin = 40\nJmax = 90\nS1 = 50\nS2 = 40\nS3 = 12\nS4 = 8\nH1 = 1234567\nH2 = 2345678\nH3 = 3456789\nH4 = 4567890\nI1 = <r 128>\n\n[Peer]\nPublicKey = <server>\nEndpoint = ' + (servers[0]?.host ?? 'node') + ':51820\nAllowedIPs = 0.0.0.0/0\nPersistentKeepalive = 25\n',
+        vpn_link: 'vpn://mock-amneziawg-deep-link-payload',
+      },
+    ])
+  }),
   http.get('/api/clients/:id/qrcode', async ({ request, params }) => {
     if (!requireAuth(request)) return unauthorized()
     const c = clients.find((x) => x.id === Number(params.id))

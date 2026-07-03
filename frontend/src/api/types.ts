@@ -43,6 +43,7 @@ export const PROTOCOL_LABELS: Record<Protocol, string> = {
   trojan: 'Trojan',
   shadowsocks: 'Shadowsocks',
   hysteria2: 'Hysteria2',
+  amneziawg: 'AmneziaWG',
 }
 
 export const PROTOCOL_ENGINE: Record<Protocol, Engine> = {
@@ -51,4 +52,7 @@ export const PROTOCOL_ENGINE: Record<Protocol, Engine> = {
   trojan: 'xray',
   shadowsocks: 'xray',
   hysteria2: 'hysteria',
+  amneziawg: 'amneziawg',
 }
+
+export type AmneziaWGConfig = S['AmneziaWGConfig']

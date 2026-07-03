@@ -106,6 +106,7 @@ export function InboundFormDialog({
   const preview = useMemo(() => JSON.stringify(buildConfig(form), null, 2), [form])
   const pending = createInbound.isPending || updateInbound.isPending
   const isXray = form.protocol === 'vless' || form.protocol === 'vmess' || form.protocol === 'trojan'
+  const isAWG = form.protocol === 'amneziawg'
   const securities = securitiesFor(form.protocol)
 
   async function handleSubmit(e: React.FormEvent) {
@@ -391,13 +392,26 @@ export function InboundFormDialog({
             </>
           )}
 
-          {/* Sniffing */}
-          <Separator />
-          <div className="flex items-center justify-between">
-            <SectionTitle>{t('inboundForm.sniffing')}</SectionTitle>
-            <Switch checked={form.sniffEnabled} onCheckedChange={(v) => patch({ sniffEnabled: v })} aria-label={t('inboundForm.sniffingEnabled')} />
-          </div>
-          {form.sniffEnabled && (
+          {/* AmneziaWG */}
+          {isAWG && (
+            <>
+              <Separator />
+              <SectionTitle>AmneziaWG 2.0</SectionTitle>
+              <p className="rounded-md border border-primary/30 bg-primary/5 p-3 text-xs text-muted-foreground">
+                {t('inboundForm.awgNote')}
+              </p>
+            </>
+          )}
+
+          {/* Sniffing (not applicable to AmneziaWG) */}
+          {!isAWG && (
+            <>
+              <Separator />
+              <div className="flex items-center justify-between">
+                <SectionTitle>{t('inboundForm.sniffing')}</SectionTitle>
+                <Switch checked={form.sniffEnabled} onCheckedChange={(v) => patch({ sniffEnabled: v })} aria-label={t('inboundForm.sniffingEnabled')} />
+              </div>
+              {form.sniffEnabled && (
             <div className="flex flex-wrap gap-4">
               {SNIFF_OVERRIDES.map((o) => (
                 <label key={o} className="flex items-center gap-2 text-sm">
@@ -415,16 +429,22 @@ export function InboundFormDialog({
                 </label>
               ))}
             </div>
+              )}
+            </>
           )}
 
-          {/* Live preview of the generated config */}
-          <Separator />
-          <div className="space-y-1.5">
-            <SectionTitle>{t('inboundForm.generatedConfig')}</SectionTitle>
-            <pre className="max-h-56 overflow-auto rounded-md border bg-muted/40 p-3 font-mono text-[11px] leading-relaxed">
-              {preview}
-            </pre>
-          </div>
+          {/* Live preview of the generated config (xray/hysteria only) */}
+          {!isAWG && (
+            <>
+              <Separator />
+              <div className="space-y-1.5">
+                <SectionTitle>{t('inboundForm.generatedConfig')}</SectionTitle>
+                <pre className="max-h-56 overflow-auto rounded-md border bg-muted/40 p-3 font-mono text-[11px] leading-relaxed">
+                  {preview}
+                </pre>
+              </div>
+            </>
+          )}
 
           <DialogFooter>
             <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
