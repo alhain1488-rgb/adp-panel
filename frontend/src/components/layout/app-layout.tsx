@@ -3,20 +3,23 @@ import { Server, Users, Settings as SettingsIcon, ScrollText, LogOut } from 'luc
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { ThemeToggle } from './theme-toggle'
+import { LanguageToggle } from './language-toggle'
 import { DisgustingLogo } from './logo'
 import { useAuth } from '@/auth/auth-context'
+import { useT } from '@/i18n/i18n'
 import { APP_VERSION } from '@/version'
 
 const bottomNav = [
-  { to: '/', label: 'Servers', icon: Server, end: true },
-  { to: '/clients', label: 'Clients', icon: Users, end: false },
-  { to: '/logs', label: 'Logs', icon: ScrollText, end: false },
-  { to: '/settings', label: 'Settings', icon: SettingsIcon, end: false },
+  { to: '/', labelKey: 'nav.servers', icon: Server, end: true },
+  { to: '/clients', labelKey: 'nav.clients', icon: Users, end: false },
+  { to: '/logs', labelKey: 'nav.logs', icon: ScrollText, end: false },
+  { to: '/settings', labelKey: 'nav.settings', icon: SettingsIcon, end: false },
 ]
 
 export function AppLayout() {
   const { logout } = useAuth()
   const navigate = useNavigate()
+  const t = useT()
 
   async function handleLogout() {
     await logout()
@@ -35,8 +38,15 @@ export function AppLayout() {
           </span>
         </Link>
         <div className="flex items-center gap-1">
+          <LanguageToggle />
           <ThemeToggle />
-          <Button variant="ghost" size="icon" onClick={handleLogout} aria-label="Sign out" title="Sign out">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={handleLogout}
+            aria-label={t('app.signOut')}
+            title={t('app.signOut')}
+          >
             <LogOut className="h-4 w-4" />
           </Button>
         </div>
@@ -53,8 +63,8 @@ export function AppLayout() {
             key={item.to}
             to={item.to}
             end={item.end}
-            aria-label={item.label}
-            title={item.label}
+            aria-label={t(item.labelKey)}
+            title={t(item.labelKey)}
             className={({ isActive }) =>
               cn(
                 'flex h-10 w-10 items-center justify-center rounded-full transition-colors',

@@ -7,12 +7,15 @@ import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { useAuth } from '@/auth/auth-context'
 import { ThemeToggle } from '@/components/layout/theme-toggle'
+import { LanguageToggle } from '@/components/layout/language-toggle'
 import { DisgustingLogo } from '@/components/layout/logo'
 import { RequestError } from '@/api/client'
+import { useT } from '@/i18n/i18n'
 
 export default function LoginPage() {
   const { login, verifyTotp } = useAuth()
   const navigate = useNavigate()
+  const t = useT()
 
   const [step, setStep] = useState<'credentials' | 'totp'>('credentials')
   const [username, setUsername] = useState('admin')
@@ -35,7 +38,7 @@ export default function LoginPage() {
         navigate('/', { replace: true })
       }
     } catch (err) {
-      setError(err instanceof RequestError ? err.message : 'Login failed')
+      setError(err instanceof RequestError ? err.message : t('login.invalidCreds'))
     } finally {
       setLoading(false)
     }
@@ -49,7 +52,7 @@ export default function LoginPage() {
       await verifyTotp(code, challengeId)
       navigate('/', { replace: true })
     } catch (err) {
-      setError(err instanceof RequestError ? err.message : 'Verification failed')
+      setError(err instanceof RequestError ? err.message : t('login.invalidCode'))
     } finally {
       setLoading(false)
     }
@@ -57,7 +60,8 @@ export default function LoginPage() {
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-background via-background to-primary/5 p-4">
-      <div className="absolute right-4 top-4">
+      <div className="absolute right-4 top-4 flex items-center gap-1">
+        <LanguageToggle />
         <ThemeToggle />
       </div>
       <Card className="w-full max-w-sm shadow-lg">
@@ -72,19 +76,17 @@ export default function LoginPage() {
             )}
           </div>
           <CardTitle className="text-xl">
-            {step === 'credentials' ? 'Absolutely Disgusting Panel' : 'Two-factor authentication'}
+            {step === 'credentials' ? 'Absolutely Disgusting Panel' : t('login.2faTitle')}
           </CardTitle>
           <CardDescription>
-            {step === 'credentials'
-              ? 'Sign in to manage your servers'
-              : 'Enter the 6-digit code from your authenticator app'}
+            {step === 'credentials' ? t('login.subtitle') : t('login.2faPrompt')}
           </CardDescription>
         </CardHeader>
         <CardContent>
           {step === 'credentials' ? (
             <form onSubmit={handleCredentials} className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="username">Username</Label>
+                <Label htmlFor="username">{t('login.username')}</Label>
                 <Input
                   id="username"
                   value={username}
@@ -94,7 +96,7 @@ export default function LoginPage() {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="password">Password</Label>
+                <Label htmlFor="password">{t('login.password')}</Label>
                 <Input
                   id="password"
                   type="password"
@@ -107,13 +109,13 @@ export default function LoginPage() {
               {error && <p className="text-sm text-destructive">{error}</p>}
               <Button type="submit" className="w-full" disabled={loading}>
                 {loading && <Loader2 className="h-4 w-4 animate-spin" />}
-                Sign in
+                {t('login.signIn')}
               </Button>
             </form>
           ) : (
             <form onSubmit={handleTotp} className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="code">Authentication code</Label>
+                <Label htmlFor="code">{t('login.code')}</Label>
                 <Input
                   id="code"
                   inputMode="numeric"
@@ -128,7 +130,7 @@ export default function LoginPage() {
               {error && <p className="text-sm text-destructive">{error}</p>}
               <Button type="submit" className="w-full" disabled={loading || code.length !== 6}>
                 {loading && <Loader2 className="h-4 w-4 animate-spin" />}
-                Verify
+                {t('login.verify')}
               </Button>
               <Button
                 type="button"
@@ -140,7 +142,7 @@ export default function LoginPage() {
                   setError(null)
                 }}
               >
-                Back
+                {t('login.back')}
               </Button>
             </form>
           )}

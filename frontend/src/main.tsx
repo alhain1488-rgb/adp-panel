@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import App from './App'
 import { ThemeProvider } from './theme/theme-provider'
 import { AuthProvider } from './auth/auth-context'
+import { LanguageProvider } from './i18n/i18n'
 import { Toaster } from './components/ui/toaster'
 import './index.css'
 
@@ -26,12 +27,14 @@ void enableMocking().then(() => {
   ReactDOM.createRoot(document.getElementById('root')!).render(
     <React.StrictMode>
       <QueryClientProvider client={queryClient}>
-        <ThemeProvider>
-          <AuthProvider>
-            <App />
-            <Toaster />
-          </AuthProvider>
-        </ThemeProvider>
+        <LanguageProvider>
+          <ThemeProvider>
+            <AuthProvider>
+              <App />
+              <Toaster />
+            </AuthProvider>
+          </ThemeProvider>
+        </LanguageProvider>
       </QueryClientProvider>
     </React.StrictMode>,
   )

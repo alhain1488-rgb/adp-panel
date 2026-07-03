@@ -2,13 +2,15 @@ import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
 import { PROTOCOL_LABELS } from '@/api/types'
 import type { Protocol, ServerStatus } from '@/api/types'
+import { useT } from '@/i18n/i18n'
 
 export function StatusBadge({ status }: { status: ServerStatus }) {
+  const t = useT()
   const map: Record<ServerStatus, { label: string; variant: 'success' | 'destructive' | 'secondary' | 'warning'; dot: string }> = {
-    online: { label: 'Online', variant: 'success', dot: 'bg-white/90' },
-    offline: { label: 'Offline', variant: 'secondary', dot: 'bg-foreground/70' },
-    error: { label: 'Error', variant: 'destructive', dot: 'bg-white/90' },
-    unknown: { label: 'Unknown', variant: 'warning', dot: 'bg-black/70' },
+    online: { label: t('status.online'), variant: 'success', dot: 'bg-white/90' },
+    offline: { label: t('status.offline'), variant: 'secondary', dot: 'bg-foreground/70' },
+    error: { label: t('status.error'), variant: 'destructive', dot: 'bg-white/90' },
+    unknown: { label: t('status.unknown'), variant: 'warning', dot: 'bg-black/70' },
   }
   const s = map[status] ?? map.unknown
   return (

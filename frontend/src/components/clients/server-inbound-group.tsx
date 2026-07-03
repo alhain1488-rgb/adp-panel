@@ -4,6 +4,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { ProtocolBadge } from '@/components/common/badges'
 import { useServerInbounds } from '@/api/hooks'
 import { cn } from '@/lib/utils'
+import { useT } from '@/i18n/i18n'
 import type { Server } from '@/api/types'
 
 // Rendered once per server so the useServerInbounds hook is called from a stable
@@ -17,6 +18,7 @@ export function ServerInboundGroup({
   selected: Set<number>
   onToggle: (inboundId: number, checked: boolean) => void
 }) {
+  const t = useT()
   const { data: inbounds, isLoading } = useServerInbounds(server.id)
 
   return (
@@ -36,7 +38,7 @@ export function ServerInboundGroup({
           ))}
         </div>
       ) : inbounds.length === 0 ? (
-        <p className="px-4 py-3 text-sm text-muted-foreground">No inbounds on this server.</p>
+        <p className="px-4 py-3 text-sm text-muted-foreground">{t('serverInboundGroup.empty')}</p>
       ) : (
         <ul className="divide-y">
           {inbounds.map((inbound) => {
@@ -65,7 +67,7 @@ export function ServerInboundGroup({
                         inbound.enabled ? 'bg-success' : 'bg-muted-foreground',
                       )}
                     />
-                    {inbound.enabled ? 'Enabled' : 'Disabled'}
+                    {inbound.enabled ? t('common.enabled') : t('common.disabled')}
                   </span>
                 </label>
               </li>

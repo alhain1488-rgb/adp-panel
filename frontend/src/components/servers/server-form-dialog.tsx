@@ -15,6 +15,7 @@ import {
 } from '@/components/ui/dialog'
 import { useToast } from '@/components/ui/use-toast'
 import { useCreateServer, useUpdateServer } from '@/api/hooks'
+import { useT } from '@/i18n/i18n'
 import type { Server, ServerInput } from '@/api/types'
 
 type AuthMethod = 'key' | 'password'
@@ -33,6 +34,7 @@ export function ServerFormDialog({
 }) {
   const isEdit = !!server
   const { toast } = useToast()
+  const t = useT()
   const createServer = useCreateServer()
   const updateServer = useUpdateServer(server?.id ?? 0)
 
@@ -87,16 +89,16 @@ export function ServerFormDialog({
     try {
       if (isEdit && server) {
         await updateServer.mutateAsync(input)
-        toast({ title: 'Server updated' })
+        toast({ title: t('serverForm.updated') })
       } else {
         await createServer.mutateAsync(input)
-        toast({ title: 'Server added' })
+        toast({ title: t('serverForm.added') })
       }
       onOpenChange(false)
     } catch (err) {
       toast({
         variant: 'destructive',
-        title: isEdit ? 'Failed to update server' : 'Failed to add server',
+        title: isEdit ? t('serverForm.updateFailed') : t('serverForm.addFailed'),
         description: err instanceof Error ? err.message : undefined,
       })
     }
@@ -107,16 +109,14 @@ export function ServerFormDialog({
       <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
         <form onSubmit={handleSubmit} className="space-y-4">
           <DialogHeader>
-            <DialogTitle>{isEdit ? 'Edit server' : 'Add server'}</DialogTitle>
+            <DialogTitle>{isEdit ? t('serverForm.editTitle') : t('serverForm.addTitle')}</DialogTitle>
             <DialogDescription>
-              {isEdit
-                ? 'Update the connection details for this server.'
-                : 'Connect a new server over SSH to manage its inbounds.'}
+              {isEdit ? t('serverForm.editDesc') : t('serverForm.addDesc')}
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-2">
-            <Label htmlFor="sv-name">Name</Label>
+            <Label htmlFor="sv-name">{t('serverForm.name')}</Label>
             <Input
               id="sv-name"
               value={name}
@@ -128,17 +128,17 @@ export function ServerFormDialog({
 
           <div className="grid grid-cols-3 gap-4">
             <div className="col-span-2 space-y-2">
-              <Label htmlFor="sv-host">Host</Label>
+              <Label htmlFor="sv-host">{t('serverForm.host')}</Label>
               <Input
                 id="sv-host"
                 value={host}
                 onChange={(e) => setHost(e.target.value)}
-                placeholder="1.2.3.4 or host.example.com"
+                placeholder={t('serverForm.hostPlaceholder')}
                 required
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="sv-port">SSH port</Label>
+              <Label htmlFor="sv-port">{t('serverForm.sshPort')}</Label>
               <Input
                 id="sv-port"
                 type="number"
@@ -152,31 +152,31 @@ export function ServerFormDialog({
 
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="sv-user">SSH user</Label>
+              <Label htmlFor="sv-user">{t('serverForm.sshUser')}</Label>
               <Input id="sv-user" value={sshUser} onChange={(e) => setSshUser(e.target.value)} />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="sv-auth">Auth method</Label>
+              <Label htmlFor="sv-auth">{t('serverForm.authMethod')}</Label>
               <select
                 id="sv-auth"
                 className={selectClass}
                 value={authMethod}
                 onChange={(e) => setAuthMethod(e.target.value as AuthMethod)}
               >
-                <option value="key">Private key</option>
-                <option value="password">Password</option>
+                <option value="key">{t('serverForm.privateKey')}</option>
+                <option value="password">{t('serverForm.password')}</option>
               </select>
             </div>
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="sv-secret">{authMethod === 'key' ? 'Private key' : 'Password'}</Label>
+            <Label htmlFor="sv-secret">{authMethod === 'key' ? t('serverForm.privateKey') : t('serverForm.password')}</Label>
             {authMethod === 'key' ? (
               <Textarea
                 id="sv-secret"
                 value={secret}
                 onChange={(e) => setSecret(e.target.value)}
-                placeholder={isEdit ? 'Leave blank to keep existing key' : '-----BEGIN OPENSSH PRIVATE KEY-----'}
+                placeholder={isEdit ? t('serverForm.keyPlaceholderEdit') : '-----BEGIN OPENSSH PRIVATE KEY-----'}
                 rows={5}
                 className="font-mono text-xs"
                 spellCheck={false}
@@ -187,24 +187,24 @@ export function ServerFormDialog({
                 type="password"
                 value={secret}
                 onChange={(e) => setSecret(e.target.value)}
-                placeholder={isEdit ? 'Leave blank to keep existing password' : 'SSH password'}
+                placeholder={isEdit ? t('serverForm.passwordPlaceholderEdit') : t('serverForm.passwordPlaceholder')}
                 autoComplete="new-password"
               />
             )}
             {isEdit && (
-              <p className="text-xs text-muted-foreground">Leave blank to keep the current secret.</p>
+              <p className="text-xs text-muted-foreground">{t('serverForm.keepSecretHint')}</p>
             )}
           </div>
 
           {authMethod === 'key' && (
             <div className="space-y-2">
-              <Label htmlFor="sv-passphrase">Key passphrase (optional)</Label>
+              <Label htmlFor="sv-passphrase">{t('serverForm.passphrase')}</Label>
               <Input
                 id="sv-passphrase"
                 type="password"
                 value={passphrase}
                 onChange={(e) => setPassphrase(e.target.value)}
-                placeholder="Only if the key is encrypted"
+                placeholder={t('serverForm.passphrasePlaceholder')}
                 autoComplete="new-password"
               />
             </div>
@@ -212,15 +212,14 @@ export function ServerFormDialog({
 
           <div className="space-y-3 rounded-md border p-3">
             <div>
-              <p className="text-sm font-medium">Engine paths</p>
+              <p className="text-sm font-medium">{t('serverForm.enginePaths')}</p>
               <p className="text-xs text-muted-foreground">
-                Where the panel writes configs and which systemd services it restarts. Defaults fit a
-                standard install; the panel provisions these automatically.
+                {t('serverForm.enginePathsHint')}
               </p>
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="sv-config">Xray config path</Label>
+                <Label htmlFor="sv-config">{t('serverForm.xrayConfigPath')}</Label>
                 <Input
                   id="sv-config"
                   value={configPath}
@@ -229,7 +228,7 @@ export function ServerFormDialog({
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="sv-service">Xray service name</Label>
+                <Label htmlFor="sv-service">{t('serverForm.xrayServiceName')}</Label>
                 <Input
                   id="sv-service"
                   value={serviceName}
@@ -238,7 +237,7 @@ export function ServerFormDialog({
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="sv-hyconfig">Hysteria2 (sing-box) config path</Label>
+                <Label htmlFor="sv-hyconfig">{t('serverForm.hyConfigPath')}</Label>
                 <Input
                   id="sv-hyconfig"
                   value={hyConfigPath}
@@ -247,7 +246,7 @@ export function ServerFormDialog({
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="sv-hyservice">Hysteria2 service name</Label>
+                <Label htmlFor="sv-hyservice">{t('serverForm.hyServiceName')}</Label>
                 <Input
                   id="sv-hyservice"
                   value={hyServiceName}
@@ -270,13 +269,11 @@ export function ServerFormDialog({
                 <span className="space-y-1">
                   <span className="flex items-center gap-1.5 text-sm font-medium">
                     <AlertTriangle className="h-4 w-4 text-destructive" />
-                    Wipe existing proxy setup before installing
+                    {t('serverForm.wipeTitle')}
                   </span>
                   <span className="block text-xs text-muted-foreground">
-                    Removes competing proxy/VPN stacks and panels (xray, sing-box, hysteria, v2ray,
-                    trojan, shadowsocks, 3x-ui, marzban…) and all Docker containers to free
-                    conflicting ports and memory. The OS, SSH access and networking are left intact.
-                    <span className="font-medium text-foreground"> Irreversible.</span>
+                    {t('serverForm.wipeDesc')}
+                    <span className="font-medium text-foreground"> {t('serverForm.wipeIrreversible')}</span>
                   </span>
                 </span>
               </label>
@@ -285,11 +282,11 @@ export function ServerFormDialog({
 
           <DialogFooter>
             <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
-              Cancel
+              {t('common.cancel')}
             </Button>
             <Button type="submit" disabled={pending}>
               {pending && <Loader2 className="h-4 w-4 animate-spin" />}
-              {isEdit ? 'Save changes' : 'Add server'}
+              {isEdit ? t('serverForm.saveChanges') : t('serverForm.addTitle')}
             </Button>
           </DialogFooter>
         </form>

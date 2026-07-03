@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react'
 import QRCode from 'qrcode'
 import { cn } from '@/lib/utils'
+import { useT } from '@/i18n/i18n'
 
 // Renders a QR code from arbitrary text on the client. The backend also exposes
 // GET /api/clients/{id}/qrcode, but rendering locally keeps the detail view snappy.
 export function QrCode({ text, size = 200, className }: { text: string; size?: number; className?: string }) {
+  const t = useT()
   const [src, setSrc] = useState<string>('')
 
   useEffect(() => {
@@ -23,7 +25,7 @@ export function QrCode({ text, size = 200, className }: { text: string; size?: n
       style={{ width: size, height: size }}
     >
       {src ? (
-        <img src={src} alt="QR code" width={size - 24} height={size - 24} />
+        <img src={src} alt={t('common.qrCode')} width={size - 24} height={size - 24} />
       ) : (
         <span className="text-xs text-muted-foreground">…</span>
       )}

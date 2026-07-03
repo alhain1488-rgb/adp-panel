@@ -47,18 +47,20 @@ import {
   type TelegramInput,
 } from '@/api/backup'
 import { cn } from '@/lib/utils'
+import { useT } from '@/i18n/i18n'
 
 export default function SettingsPage() {
+  const t = useT()
   return (
     <div>
-      <PageHeader title="Settings" description="Configure your panel and account" />
+      <PageHeader title={t('settings.title')} description={t('settings.subtitle')} />
 
       <Tabs defaultValue="general">
         <TabsList>
-          <TabsTrigger value="general">General</TabsTrigger>
-          <TabsTrigger value="appearance">Appearance</TabsTrigger>
-          <TabsTrigger value="security">Security</TabsTrigger>
-          <TabsTrigger value="backup">Backup</TabsTrigger>
+          <TabsTrigger value="general">{t('settings.tab.general')}</TabsTrigger>
+          <TabsTrigger value="appearance">{t('settings.tab.appearance')}</TabsTrigger>
+          <TabsTrigger value="security">{t('settings.tab.security')}</TabsTrigger>
+          <TabsTrigger value="backup">{t('settings.tab.backup')}</TabsTrigger>
         </TabsList>
 
         <TabsContent value="general" className="mt-6">
@@ -83,6 +85,7 @@ function GeneralTab() {
   const { data, isLoading } = useSettings()
   const update = useUpdateSettings()
   const { toast } = useToast()
+  const t = useT()
 
   const [form, setForm] = useState<Settings>({})
 
@@ -112,12 +115,12 @@ function GeneralTab() {
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     update.mutate(form, {
-      onSuccess: () => toast({ title: 'Settings saved' }),
+      onSuccess: () => toast({ title: t('settings.general.saved') }),
       onError: (err) =>
         toast({
           variant: 'destructive',
-          title: 'Failed to save',
-          description: err instanceof RequestError ? err.message : 'Please try again.',
+          title: t('settings.saveFailed'),
+          description: err instanceof RequestError ? err.message : t('common.tryAgain'),
         }),
     })
   }
@@ -125,35 +128,35 @@ function GeneralTab() {
   return (
     <Card className="max-w-2xl">
       <CardHeader>
-        <CardTitle>General</CardTitle>
-        <CardDescription>Panel-wide options used to build subscriptions and sync.</CardDescription>
+        <CardTitle>{t('settings.tab.general')}</CardTitle>
+        <CardDescription>{t('settings.general.desc')}</CardDescription>
       </CardHeader>
       <CardContent>
         <form onSubmit={handleSubmit} className="space-y-6">
           <div className="space-y-2">
-            <Label htmlFor="domain">Domain</Label>
+            <Label htmlFor="domain">{t('settings.general.domain')}</Label>
             <Input
               id="domain"
               placeholder="panel.example.com"
               value={form.domain ?? ''}
               onChange={(e) => setForm((f) => ({ ...f, domain: e.target.value }))}
             />
-            <p className="text-xs text-muted-foreground">Public hostname clients connect to.</p>
+            <p className="text-xs text-muted-foreground">{t('settings.general.domainHint')}</p>
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="subscription_base_url">Subscription base URL</Label>
+            <Label htmlFor="subscription_base_url">{t('settings.general.subBaseUrl')}</Label>
             <Input
               id="subscription_base_url"
               placeholder="https://panel.example.com/sub"
               value={form.subscription_base_url ?? ''}
               onChange={(e) => setForm((f) => ({ ...f, subscription_base_url: e.target.value }))}
             />
-            <p className="text-xs text-muted-foreground">Prefix used when generating client subscription links.</p>
+            <p className="text-xs text-muted-foreground">{t('settings.general.subBaseUrlHint')}</p>
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="sync_interval_seconds">Sync interval (seconds)</Label>
+            <Label htmlFor="sync_interval_seconds">{t('settings.general.syncInterval')}</Label>
             <Input
               id="sync_interval_seconds"
               type="number"
@@ -166,27 +169,27 @@ function GeneralTab() {
                 }))
               }
             />
-            <p className="text-xs text-muted-foreground">How often the panel pushes config to servers.</p>
+            <p className="text-xs text-muted-foreground">{t('settings.general.syncIntervalHint')}</p>
           </div>
 
           <Separator />
 
           <div className="space-y-2">
-            <Label>Hysteria engine</Label>
+            <Label>{t('settings.general.hysteriaEngine')}</Label>
             <div className="flex items-center gap-2">
               <Badge variant="secondary" className="font-mono">
                 {data.hysteria_engine ?? 'sing-box'}
               </Badge>
             </div>
             <p className="text-xs text-muted-foreground">
-              Read-only. Chosen in the deployment docs and applied at deploy time.
+              {t('settings.general.hysteriaEngineHint')}
             </p>
           </div>
 
           <div className="flex justify-end">
             <Button type="submit" disabled={update.isPending}>
               {update.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
-              Save
+              {t('common.save')}
             </Button>
           </div>
         </form>
@@ -196,20 +199,21 @@ function GeneralTab() {
 }
 
 // ---- Appearance ----
-const THEME_OPTIONS: { value: Theme; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
-  { value: 'light', label: 'Light', icon: Sun },
-  { value: 'dark', label: 'Dark', icon: Moon },
-  { value: 'system', label: 'System', icon: Monitor },
+const THEME_OPTIONS: { value: Theme; labelKey: string; icon: React.ComponentType<{ className?: string }> }[] = [
+  { value: 'light', labelKey: 'settings.appearance.light', icon: Sun },
+  { value: 'dark', labelKey: 'settings.appearance.dark', icon: Moon },
+  { value: 'system', labelKey: 'settings.appearance.system', icon: Monitor },
 ]
 
 function AppearanceTab() {
   const { theme, setTheme } = useTheme()
+  const t = useT()
 
   return (
     <Card className="max-w-2xl">
       <CardHeader>
-        <CardTitle>Appearance</CardTitle>
-        <CardDescription>Choose how the panel looks. Saved locally on this device.</CardDescription>
+        <CardTitle>{t('settings.tab.appearance')}</CardTitle>
+        <CardDescription>{t('settings.appearance.desc')}</CardDescription>
       </CardHeader>
       <CardContent>
         <div className="grid grid-cols-3 gap-3">
@@ -230,7 +234,7 @@ function AppearanceTab() {
                 )}
               >
                 <Icon className="h-5 w-5" />
-                {opt.label}
+                {t(opt.labelKey)}
               </button>
             )
           })}
@@ -245,13 +249,14 @@ function SecurityTab() {
   const { admin } = useAuth()
   const [open, setOpen] = useState(false)
   const enabled = admin?.totp_enabled ?? false
+  const t = useT()
 
   return (
     <Card className="max-w-2xl">
       <CardHeader>
-        <CardTitle>Two-factor authentication</CardTitle>
+        <CardTitle>{t('settings.security.title')}</CardTitle>
         <CardDescription>
-          Protect your account with a time-based one-time password (TOTP).
+          {t('settings.security.desc')}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -261,18 +266,18 @@ function SecurityTab() {
               <ShieldCheck className="h-5 w-5" />
             </div>
             <div>
-              <p className="text-sm font-medium">Authenticator app</p>
+              <p className="text-sm font-medium">{t('settings.security.authApp')}</p>
               <p className="text-xs text-muted-foreground">
-                {enabled ? 'Two-factor is currently active.' : 'Two-factor is not enabled.'}
+                {enabled ? t('settings.security.active') : t('settings.security.inactive')}
               </p>
             </div>
           </div>
-          <Badge variant={enabled ? 'success' : 'secondary'}>{enabled ? 'Enabled' : 'Disabled'}</Badge>
+          <Badge variant={enabled ? 'success' : 'secondary'}>{enabled ? t('common.enabled') : t('common.disabled')}</Badge>
         </div>
 
         <Button variant="outline" onClick={() => setOpen(true)}>
           <KeyRound className="h-4 w-4" />
-          {enabled ? 'Re-enroll 2FA' : 'Configure 2FA'}
+          {enabled ? t('settings.security.reenroll') : t('settings.security.configure')}
         </Button>
       </CardContent>
 
@@ -284,6 +289,7 @@ function SecurityTab() {
 // ---- Backup & Restore ----
 function BackupTab() {
   const { toast } = useToast()
+  const t = useT()
 
   // Export
   const [exportPass, setExportPass] = useState('')
@@ -295,14 +301,14 @@ function BackupTab() {
     try {
       await downloadBackup(exportPass)
       toast({
-        title: 'Backup downloaded',
-        description: 'Keep the file and its passphrase together, somewhere safe.',
+        title: t('settings.backup.exportDone.title'),
+        description: t('settings.backup.exportDone.desc'),
       })
     } catch (err) {
       toast({
         variant: 'destructive',
-        title: 'Backup failed',
-        description: err instanceof RequestError ? err.message : 'Please try again.',
+        title: t('settings.backup.exportFailed'),
+        description: err instanceof RequestError ? err.message : t('common.tryAgain'),
       })
     } finally {
       setExporting(false)
@@ -327,8 +333,8 @@ function BackupTab() {
     } catch (err) {
       toast({
         variant: 'destructive',
-        title: 'Restore failed',
-        description: err instanceof RequestError ? err.message : 'Please try again.',
+        title: t('settings.backup.restoreFailed'),
+        description: err instanceof RequestError ? err.message : t('common.tryAgain'),
       })
     } finally {
       setImporting(false)
@@ -341,33 +347,31 @@ function BackupTab() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Download className="h-5 w-5 text-primary" />
-            Export backup
+            {t('settings.backup.export.title')}
           </CardTitle>
           <CardDescription>
-            Download an encrypted snapshot of everything — servers, inbounds, clients and their
-            grants. Restore it on any fresh install to migrate.
+            {t('settings.backup.export.desc')}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="export-pass">Encryption passphrase</Label>
+            <Label htmlFor="export-pass">{t('settings.backup.encPassphrase')}</Label>
             <Input
               id="export-pass"
               type="password"
               autoComplete="new-password"
-              placeholder="At least 8 characters"
+              placeholder={t('settings.backup.min8Placeholder')}
               value={exportPass}
               onChange={(e) => setExportPass(e.target.value)}
             />
             <p className="text-xs text-muted-foreground">
-              The backup is useless without this passphrase — you'll need it to restore. There is no
-              way to recover it.
+              {t('settings.backup.encPassphraseHint')}
             </p>
           </div>
           <div className="flex justify-end">
             <Button onClick={handleExport} disabled={exporting || exportPass.length < 8}>
               {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-              Download backup
+              {t('settings.backup.download')}
             </Button>
           </div>
         </CardContent>
@@ -377,16 +381,17 @@ function BackupTab() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Upload className="h-5 w-5 text-primary" />
-            Restore from backup
+            {t('settings.backup.restore.title')}
           </CardTitle>
           <CardDescription>
-            Import a backup file. This <span className="font-medium text-foreground">replaces all
-            current data</span> and restarts the panel.
+            {t('settings.backup.restore.descPre')}{' '}
+            <span className="font-medium text-foreground">{t('settings.backup.restore.descEmphasis')}</span>
+            {t('settings.backup.restore.descPost')}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="import-file">Backup file</Label>
+            <Label htmlFor="import-file">{t('settings.backup.file')}</Label>
             <Input
               id="import-file"
               ref={fileRef}
@@ -397,12 +402,12 @@ function BackupTab() {
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="import-pass">Passphrase</Label>
+            <Label htmlFor="import-pass">{t('settings.backup.passphrase')}</Label>
             <Input
               id="import-pass"
               type="password"
               autoComplete="off"
-              placeholder="The passphrase this backup was made with"
+              placeholder={t('settings.backup.importPassPlaceholder')}
               value={importPass}
               onChange={(e) => setImportPass(e.target.value)}
             />
@@ -414,7 +419,7 @@ function BackupTab() {
               disabled={!file || importPass.length < 1}
             >
               <Upload className="h-4 w-4" />
-              Restore
+              {t('settings.backup.restore.button')}
             </Button>
           </div>
         </CardContent>
@@ -428,21 +433,21 @@ function BackupTab() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <AlertTriangle className="h-5 w-5 text-destructive" />
-              Replace all data?
+              {t('settings.backup.confirm.title')}
             </DialogTitle>
             <DialogDescription>
-              Restoring overwrites every server, inbound and client currently in this panel, then
-              restarts it. After it comes back, log in with the admin credentials from the{' '}
-              <span className="font-medium text-foreground">backed-up</span> panel — not this one.
+              {t('settings.backup.confirm.descPre')}{' '}
+              <span className="font-medium text-foreground">{t('settings.backup.confirm.descEmphasis')}</span>
+              {t('settings.backup.confirm.descPost')}
             </DialogDescription>
           </DialogHeader>
           <div className="flex justify-end gap-2">
             <Button variant="outline" onClick={() => setConfirmOpen(false)} disabled={importing}>
-              Cancel
+              {t('common.cancel')}
             </Button>
             <Button variant="destructive" onClick={handleImport} disabled={importing}>
               {importing && <Loader2 className="h-4 w-4 animate-spin" />}
-              Restore &amp; restart
+              {t('settings.backup.confirm.button')}
             </Button>
           </div>
         </DialogContent>
@@ -454,17 +459,18 @@ function BackupTab() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <DatabaseBackup className="h-5 w-5 text-primary" />
-              Restore applied
+              {t('settings.backup.applied.title')}
             </DialogTitle>
             <DialogDescription>
-              Imported {done?.servers ?? 0} server{done?.servers === 1 ? '' : 's'},{' '}
-              {done?.inbounds ?? 0} inbound{done?.inbounds === 1 ? '' : 's'} and {done?.clients ?? 0}{' '}
-              client{done?.clients === 1 ? '' : 's'}. The panel is restarting — give it ~15 seconds,
-              then reload and sign in with the backed-up admin credentials.
+              {t('settings.backup.applied.desc', {
+                servers: done?.servers ?? 0,
+                inbounds: done?.inbounds ?? 0,
+                clients: done?.clients ?? 0,
+              })}
             </DialogDescription>
           </DialogHeader>
           <div className="flex justify-end">
-            <Button onClick={() => window.location.reload()}>Reload panel</Button>
+            <Button onClick={() => window.location.reload()}>{t('settings.backup.reload')}</Button>
           </div>
         </DialogContent>
       </Dialog>
@@ -477,6 +483,7 @@ function TelegramBackupCard() {
   const update = useUpdateTelegramBackup()
   const runNow = useRunTelegramBackup()
   const { toast } = useToast()
+  const t = useT()
 
   const [form, setForm] = useState<TelegramInput>({
     enabled: false,
@@ -503,26 +510,26 @@ function TelegramBackupCard() {
   function save() {
     update.mutate(form, {
       onSuccess: () => {
-        toast({ title: 'Telegram backup saved' })
+        toast({ title: t('settings.telegram.saved') })
         setForm((f) => ({ ...f, token: '', passphrase: '' }))
       },
       onError: (err) =>
         toast({
           variant: 'destructive',
-          title: 'Failed to save',
-          description: err instanceof RequestError ? err.message : 'Please try again.',
+          title: t('settings.saveFailed'),
+          description: err instanceof RequestError ? err.message : t('common.tryAgain'),
         }),
     })
   }
 
   function sendNow() {
     runNow.mutate(undefined, {
-      onSuccess: () => toast({ title: 'Backup sent to Telegram' }),
+      onSuccess: () => toast({ title: t('settings.telegram.sent') }),
       onError: (err) =>
         toast({
           variant: 'destructive',
-          title: 'Send failed',
-          description: err instanceof RequestError ? err.message : 'Check the token, chat ID and passphrase.',
+          title: t('settings.telegram.sendFailed'),
+          description: err instanceof RequestError ? err.message : t('settings.telegram.sendFailedDesc'),
         }),
     })
   }
@@ -548,18 +555,18 @@ function TelegramBackupCard() {
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Send className="h-5 w-5 text-primary" />
-          Automatic backup to Telegram
+          {t('settings.telegram.title')}
         </CardTitle>
         <CardDescription>
-          Send an encrypted backup to a Telegram chat on a schedule. Create a bot with{' '}
-          <span className="font-mono">@BotFather</span>, then paste its token and your chat ID.
+          {t('settings.telegram.descPre')}{' '}
+          <span className="font-mono">@BotFather</span>{t('settings.telegram.descPost')}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="flex items-center justify-between rounded-lg border p-3">
           <div>
-            <p className="text-sm font-medium">Scheduled backups</p>
-            <p className="text-xs text-muted-foreground">Send automatically at the interval below.</p>
+            <p className="text-sm font-medium">{t('settings.telegram.scheduled')}</p>
+            <p className="text-xs text-muted-foreground">{t('settings.telegram.scheduledHint')}</p>
           </div>
           <Switch
             checked={form.enabled}
@@ -568,12 +575,12 @@ function TelegramBackupCard() {
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="tg-token">Bot token</Label>
+          <Label htmlFor="tg-token">{t('settings.telegram.botToken')}</Label>
           <Input
             id="tg-token"
             type="password"
             autoComplete="off"
-            placeholder={data?.has_token ? '•••••• stored — leave blank to keep' : '123456:ABC-DEF…'}
+            placeholder={data?.has_token ? t('settings.telegram.storedPlaceholder') : '123456:ABC-DEF…'}
             value={form.token}
             onChange={(e) => setForm((f) => ({ ...f, token: e.target.value }))}
           />
@@ -581,7 +588,7 @@ function TelegramBackupCard() {
 
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-2">
-            <Label htmlFor="tg-chat">Chat ID</Label>
+            <Label htmlFor="tg-chat">{t('settings.telegram.chatId')}</Label>
             <Input
               id="tg-chat"
               placeholder="123456789"
@@ -590,7 +597,7 @@ function TelegramBackupCard() {
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="tg-interval">Interval (hours)</Label>
+            <Label htmlFor="tg-interval">{t('settings.telegram.interval')}</Label>
             <Input
               id="tg-interval"
               type="number"
@@ -604,28 +611,28 @@ function TelegramBackupCard() {
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="tg-pass">Backup passphrase</Label>
+          <Label htmlFor="tg-pass">{t('settings.telegram.passphrase')}</Label>
           <Input
             id="tg-pass"
             type="password"
             autoComplete="off"
-            placeholder={data?.has_passphrase ? '•••••• stored — leave blank to keep' : 'At least 8 characters'}
+            placeholder={data?.has_passphrase ? t('settings.telegram.storedPlaceholder') : t('settings.backup.min8Placeholder')}
             value={form.passphrase}
             onChange={(e) => setForm((f) => ({ ...f, passphrase: e.target.value }))}
           />
           <p className="text-xs text-muted-foreground">
-            Used to encrypt the scheduled backups. Store it safely — you'll need it to restore.
+            {t('settings.telegram.passphraseHint')}
           </p>
         </div>
 
         {data?.last_at && (
           <div className="rounded-lg border bg-muted/40 p-3 text-xs">
-            <span className="text-muted-foreground">Last run: </span>
+            <span className="text-muted-foreground">{t('settings.telegram.lastRun')} </span>
             <span className="font-medium">{new Date(data.last_at).toLocaleString()}</span>{' '}
             {data.last_ok ? (
-              <Badge variant="success">sent</Badge>
+              <Badge variant="success">{t('settings.telegram.statusSent')}</Badge>
             ) : (
-              <Badge variant="destructive">failed</Badge>
+              <Badge variant="destructive">{t('settings.telegram.statusFailed')}</Badge>
             )}
             {!data.last_ok && data.last_error && (
               <p className="mt-1 text-destructive">{data.last_error}</p>
@@ -638,14 +645,14 @@ function TelegramBackupCard() {
             variant="outline"
             onClick={sendNow}
             disabled={runNow.isPending || !configured}
-            title={configured ? undefined : 'Save a token, chat ID and passphrase first'}
+            title={configured ? undefined : t('settings.telegram.saveFirst')}
           >
             {runNow.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-            Send test now
+            {t('settings.telegram.sendTest')}
           </Button>
           <Button onClick={save} disabled={update.isPending}>
             {update.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
-            Save
+            {t('common.save')}
           </Button>
         </div>
       </CardContent>
@@ -656,6 +663,7 @@ function TelegramBackupCard() {
 function TwoFactorDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
   const { toast } = useToast()
   const { refresh } = useAuth()
+  const t = useT()
 
   const [setup, setSetup] = useState<TotpSetup | null>(null)
   const [loading, setLoading] = useState(false)
@@ -681,7 +689,7 @@ function TwoFactorDialog({ open, onOpenChange }: { open: boolean; onOpenChange: 
         if (!cancelled) setSetup(res)
       })
       .catch((err) => {
-        if (!cancelled) setError(err instanceof RequestError ? err.message : 'Failed to start enrollment')
+        if (!cancelled) setError(err instanceof RequestError ? err.message : t('settings.twofa.startFailed'))
       })
       .finally(() => {
         if (!cancelled) setLoading(false)
@@ -689,7 +697,7 @@ function TwoFactorDialog({ open, onOpenChange }: { open: boolean; onOpenChange: 
     return () => {
       cancelled = true
     }
-  }, [open])
+  }, [open, t])
 
   async function copySecret() {
     if (!setup?.secret) return
@@ -704,11 +712,11 @@ function TwoFactorDialog({ open, onOpenChange }: { open: boolean; onOpenChange: 
     setSubmitting(true)
     try {
       await api.post('/api/auth/2fa/enable', { code })
-      toast({ title: 'Two-factor enabled' })
+      toast({ title: t('settings.twofa.enabled') })
       await refresh()
       onOpenChange(false)
     } catch (err) {
-      setError(err instanceof RequestError ? err.message : 'Invalid code. Please try again.')
+      setError(err instanceof RequestError ? err.message : t('settings.twofa.invalidCode'))
     } finally {
       setSubmitting(false)
     }
@@ -718,9 +726,9 @@ function TwoFactorDialog({ open, onOpenChange }: { open: boolean; onOpenChange: 
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Configure two-factor authentication</DialogTitle>
+          <DialogTitle>{t('settings.twofa.dialogTitle')}</DialogTitle>
           <DialogDescription>
-            Scan the QR code with your authenticator app, then enter the 6-digit code to confirm.
+            {t('settings.twofa.dialogDesc')}
           </DialogDescription>
         </DialogHeader>
 
@@ -734,28 +742,28 @@ function TwoFactorDialog({ open, onOpenChange }: { open: boolean; onOpenChange: 
             <div className="flex justify-center">
               <img
                 src={setup.qr}
-                alt="Two-factor enrollment QR code"
+                alt={t('settings.twofa.qrAlt')}
                 className="h-44 w-44 rounded-lg border bg-white p-2"
               />
             </div>
 
             {setup.secret && (
               <div className="space-y-1.5">
-                <Label>Secret key</Label>
+                <Label>{t('settings.twofa.secretKey')}</Label>
                 <div className="flex items-center gap-2">
                   <code className="flex-1 truncate rounded-md border bg-muted px-3 py-2 font-mono text-xs">
                     {setup.secret}
                   </code>
                   <Button type="button" variant="outline" size="icon" onClick={copySecret}>
                     {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
-                    <span className="sr-only">Copy secret</span>
+                    <span className="sr-only">{t('settings.twofa.copySecret')}</span>
                   </Button>
                 </div>
               </div>
             )}
 
             <div className="space-y-2">
-              <Label htmlFor="totp-code">Authentication code</Label>
+              <Label htmlFor="totp-code">{t('settings.twofa.authCode')}</Label>
               <Input
                 id="totp-code"
                 inputMode="numeric"
@@ -771,11 +779,11 @@ function TwoFactorDialog({ open, onOpenChange }: { open: boolean; onOpenChange: 
 
             <Button type="submit" className="w-full" disabled={submitting || code.length !== 6}>
               {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
-              Enable
+              {t('common.enable')}
             </Button>
           </form>
         ) : (
-          <p className="text-sm text-destructive">{error ?? 'Something went wrong.'}</p>
+          <p className="text-sm text-destructive">{error ?? t('settings.twofa.genericError')}</p>
         )}
       </DialogContent>
     </Dialog>

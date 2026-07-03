@@ -44,7 +44,8 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { useToast } from '@/components/ui/use-toast'
-import { cn, formatRelativeTime } from '@/lib/utils'
+import { cn } from '@/lib/utils'
+import { useT, useRelTime } from '@/i18n/i18n'
 import {
   useClients,
   useCreateClient,
@@ -55,13 +56,14 @@ import {
 import type { Client } from '@/api/types'
 
 function EnabledDot({ enabled }: { enabled: boolean }) {
+  const t = useT()
   return (
     <span className="inline-flex items-center gap-1.5 text-sm">
       <span
         className={cn('h-1.5 w-1.5 rounded-full', enabled ? 'bg-success' : 'bg-muted-foreground')}
       />
       <span className={enabled ? '' : 'text-muted-foreground'}>
-        {enabled ? 'Enabled' : 'Disabled'}
+        {enabled ? t('common.enabled') : t('common.disabled')}
       </span>
     </span>
   )
@@ -76,6 +78,7 @@ function CreateClientDialog({
 }) {
   const navigate = useNavigate()
   const { toast } = useToast()
+  const t = useT()
   const createClient = useCreateClient()
   const [name, setName] = useState('')
 
@@ -89,12 +92,12 @@ function CreateClientDialog({
     if (!trimmed) return
     try {
       const client = await createClient.mutateAsync({ name: trimmed })
-      toast({ title: 'Client created', description: `“${client.name}” is ready to configure.` })
+      toast({ title: t('clients.created.title'), description: t('clients.created.desc', { name: client.name }) })
       onOpenChange(false)
       reset()
       navigate(`/clients/${client.id}`)
     } catch {
-      toast({ title: 'Could not create client', variant: 'destructive' })
+      toast({ title: t('clients.createFailed'), variant: 'destructive' })
     }
   }
 
@@ -109,19 +112,16 @@ function CreateClientDialog({
       <DialogContent className="sm:max-w-md">
         <form onSubmit={handleSubmit}>
           <DialogHeader>
-            <DialogTitle>New client</DialogTitle>
-            <DialogDescription>
-              Just give it a name — you can grant server access and share the subscription
-              afterwards.
-            </DialogDescription>
+            <DialogTitle>{t('clients.new.title')}</DialogTitle>
+            <DialogDescription>{t('clients.new.desc')}</DialogDescription>
           </DialogHeader>
           <div className="space-y-2 py-4">
-            <Label htmlFor="client-name">Name</Label>
+            <Label htmlFor="client-name">{t('clients.col.name')}</Label>
             <Input
               id="client-name"
               autoFocus
               value={name}
-              placeholder="e.g. Alice's phone"
+              placeholder={t('clients.new.namePlaceholder')}
               onChange={(e) => setName(e.target.value)}
               required
             />
@@ -133,11 +133,11 @@ function CreateClientDialog({
               onClick={() => onOpenChange(false)}
               disabled={createClient.isPending}
             >
-              Cancel
+              {t('common.cancel')}
             </Button>
             <Button type="submit" disabled={createClient.isPending || !name.trim()}>
               {createClient.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
-              Create client
+              {t('clients.add')}
             </Button>
           </DialogFooter>
         </form>
@@ -148,6 +148,8 @@ function CreateClientDialog({
 
 function ClientRow({ client }: { client: Client }) {
   const { toast } = useToast()
+  const t = useT()
+  const rel = useRelTime()
   const toggle = useToggleClient(client.id)
   const rotate = useRotateToken(client.id)
   const del = useDeleteClient()
@@ -158,8 +160,8 @@ function ClientRow({ client }: { client: Client }) {
   function handleToggle() {
     toggle.mutate(!client.enabled, {
       onSuccess: () =>
-        toast({ title: client.enabled ? 'Client disabled' : 'Client enabled' }),
-      onError: () => toast({ title: 'Action failed', variant: 'destructive' }),
+        toast({ title: client.enabled ? t('clients.toggle.disabled') : t('clients.toggle.enabled') }),
+      onError: () => toast({ title: t('clients.actionFailed'), variant: 'destructive' }),
     })
   }
 
@@ -167,20 +169,20 @@ function ClientRow({ client }: { client: Client }) {
     rotate.mutate(undefined, {
       onSuccess: () =>
         toast({
-          title: 'Subscription token rotated',
-          description: 'The previous subscription link no longer works.',
+          title: t('clients.rotated.title'),
+          description: t('clients.rotated.desc'),
         }),
-      onError: () => toast({ title: 'Could not rotate token', variant: 'destructive' }),
+      onError: () => toast({ title: t('clients.rotateFailed'), variant: 'destructive' }),
     })
   }
 
   function handleDelete() {
     del.mutate(client.id, {
       onSuccess: () => {
-        toast({ title: 'Client deleted' })
+        toast({ title: t('clients.deleted') })
         setConfirmDelete(false)
       },
-      onError: () => toast({ title: 'Could not delete client', variant: 'destructive' }),
+      onError: () => toast({ title: t('clients.deleteFailed'), variant: 'destructive' }),
     })
   }
 
@@ -196,17 +198,17 @@ function ClientRow({ client }: { client: Client }) {
           <EnabledDot enabled={client.enabled} />
         </TableCell>
         <TableCell className="tabular-nums">
-          {grantCount} {grantCount === 1 ? 'inbound' : 'inbounds'}
+          {grantCount === 1 ? t('clients.inbounds.one', { n: grantCount }) : t('clients.inbounds', { n: grantCount })}
         </TableCell>
         <TableCell className="max-w-[16rem] truncate text-muted-foreground">
           {client.remark || '—'}
         </TableCell>
         <TableCell className="whitespace-nowrap text-muted-foreground">
-          {formatRelativeTime(client.created_at)}
+          {rel(client.created_at)}
         </TableCell>
         <TableCell>
           {client.subscription_url ? (
-            <CopyButton value={client.subscription_url} size="sm" label="Subscription" />
+            <CopyButton value={client.subscription_url} size="sm" label={t('clients.col.subscription')} />
           ) : (
             <span className="text-xs text-muted-foreground">—</span>
           )}
@@ -222,16 +224,16 @@ function ClientRow({ client }: { client: Client }) {
               <DropdownMenuItem asChild>
                 <Link to={`/clients/${client.id}`}>
                   <ExternalLink className="h-4 w-4" />
-                  Open
+                  {t('common.open')}
                 </Link>
               </DropdownMenuItem>
               <DropdownMenuItem onClick={handleToggle} disabled={toggle.isPending}>
                 <Power className="h-4 w-4" />
-                {client.enabled ? 'Disable' : 'Enable'}
+                {client.enabled ? t('common.disable') : t('common.enable')}
               </DropdownMenuItem>
               <DropdownMenuItem onClick={handleRotate} disabled={rotate.isPending}>
                 <RefreshCw className="h-4 w-4" />
-                Rotate token
+                {t('clients.rotate')}
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem
@@ -239,7 +241,7 @@ function ClientRow({ client }: { client: Client }) {
                 onClick={() => setConfirmDelete(true)}
               >
                 <Trash2 className="h-4 w-4" />
-                Delete
+                {t('common.delete')}
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -249,19 +251,16 @@ function ClientRow({ client }: { client: Client }) {
       <Dialog open={confirmDelete} onOpenChange={setConfirmDelete}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Delete client?</DialogTitle>
-            <DialogDescription>
-              “{client.name}” and its subscription link will be permanently removed. This cannot be
-              undone.
-            </DialogDescription>
+            <DialogTitle>{t('clients.delete.title')}</DialogTitle>
+            <DialogDescription>{t('clients.delete.desc', { name: client.name })}</DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button variant="ghost" onClick={() => setConfirmDelete(false)} disabled={del.isPending}>
-              Cancel
+              {t('common.cancel')}
             </Button>
             <Button variant="destructive" onClick={handleDelete} disabled={del.isPending}>
               {del.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
-              Delete
+              {t('common.delete')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -273,20 +272,49 @@ function ClientRow({ client }: { client: Client }) {
 // A shared, static list of RU services that should route directly (bypass the
 // VPN). Served as a plain file by the panel; users plug the URL into their
 // client's direct/bypass routing, or scan the QR to open it.
+// The same curated list, served in the format each client understands. The
+// derived files live in /public and are generated from ru-direct-domains.txt.
+const DIRECT_FORMATS = [
+  { id: 'singbox', file: 'ru-direct.singbox.json', labelKey: 'directDomains.fmt.singbox', hintKey: 'directDomains.hint.singbox' },
+  { id: 'clash', file: 'ru-direct.clash.yaml', labelKey: 'directDomains.fmt.clash', hintKey: 'directDomains.hint.clash' },
+  { id: 'txt', file: 'ru-direct-domains.txt', labelKey: 'directDomains.fmt.txt', hintKey: 'directDomains.hint.txt' },
+] as const
+
+type DirectFormatId = (typeof DIRECT_FORMATS)[number]['id']
+
 function DirectDomainsCard() {
-  const url = `${window.location.origin}/ru-direct-domains.txt`
+  const t = useT()
+  const [fmtId, setFmtId] = useState<DirectFormatId>('singbox')
+  const fmt = DIRECT_FORMATS.find((f) => f.id === fmtId) ?? DIRECT_FORMATS[0]
+  const url = `${window.location.origin}/${fmt.file}`
   return (
     <Card className="mb-6 p-5">
-      <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
-        <div className="min-w-0 space-y-2">
+      <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0 flex-1 space-y-3">
           <div className="flex items-center gap-2">
             <ListFilter className="h-5 w-5 text-primary" />
-            <h3 className="font-semibold">Direct domains (bypass VPN)</h3>
+            <h3 className="font-semibold">{t('directDomains.title')}</h3>
           </div>
-          <p className="max-w-xl text-sm text-muted-foreground">
-            A list of Russian services that should go directly, not through the proxy. Add this URL
-            to your client's direct/bypass routing rules, or scan the QR to open it.
-          </p>
+          <p className="max-w-xl text-sm text-muted-foreground">{t('directDomains.desc')}</p>
+
+          <div className="space-y-1.5">
+            <label htmlFor="dd-format" className="text-xs font-medium text-muted-foreground">
+              {t('directDomains.clientLabel')}
+            </label>
+            <select
+              id="dd-format"
+              value={fmtId}
+              onChange={(e) => setFmtId(e.target.value as DirectFormatId)}
+              className="flex h-9 w-full max-w-xs cursor-pointer rounded-md border border-input bg-background px-3 py-1 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              {DIRECT_FORMATS.map((f) => (
+                <option key={f.id} value={f.id}>
+                  {t(f.labelKey)}
+                </option>
+              ))}
+            </select>
+          </div>
+
           <div className="flex items-center gap-2">
             <Input
               readOnly
@@ -296,6 +324,7 @@ function DirectDomainsCard() {
             />
             <CopyButton value={url} size="sm" label="URL" />
           </div>
+          <p className="max-w-xl text-xs text-muted-foreground">{t(fmt.hintKey)}</p>
         </div>
         <div className="shrink-0 self-center">
           <QrCode text={url} size={132} />
@@ -308,13 +337,14 @@ function DirectDomainsCard() {
 export default function ClientsPage() {
   const { data: clients, isLoading } = useClients()
   const [createOpen, setCreateOpen] = useState(false)
+  const t = useT()
 
   return (
     <div>
-      <PageHeader title="Clients" description="People and devices that connect through your servers">
+      <PageHeader title={t('clients.title')} description={t('clients.subtitle')}>
         <Button onClick={() => setCreateOpen(true)}>
           <Plus className="h-4 w-4" />
-          Add client
+          {t('clients.add')}
         </Button>
       </PageHeader>
 
@@ -329,12 +359,12 @@ export default function ClientsPage() {
       ) : clients.length === 0 ? (
         <EmptyState
           icon={Users}
-          title="No clients yet"
-          description="Create a client to generate a subscription link and grant it access to your servers."
+          title={t('clients.empty.title')}
+          description={t('clients.empty.desc')}
           action={
             <Button onClick={() => setCreateOpen(true)}>
               <Plus className="h-4 w-4" />
-              Add client
+              {t('clients.add')}
             </Button>
           }
         />
@@ -343,12 +373,12 @@ export default function ClientsPage() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Name</TableHead>
-                <TableHead>State</TableHead>
-                <TableHead>Access</TableHead>
-                <TableHead>Remark</TableHead>
-                <TableHead>Created</TableHead>
-                <TableHead>Subscription</TableHead>
+                <TableHead>{t('clients.col.name')}</TableHead>
+                <TableHead>{t('clients.col.state')}</TableHead>
+                <TableHead>{t('clients.col.access')}</TableHead>
+                <TableHead>{t('clients.col.remark')}</TableHead>
+                <TableHead>{t('clients.col.created')}</TableHead>
+                <TableHead>{t('clients.col.subscription')}</TableHead>
                 <TableHead className="w-10" />
               </TableRow>
             </TableHeader>

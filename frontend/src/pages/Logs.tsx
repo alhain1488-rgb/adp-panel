@@ -9,7 +9,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { useLogs } from '@/api/hooks'
 import type { AuditLog } from '@/api/types'
-import { formatRelativeTime } from '@/lib/utils'
+import { useT, useRelTime } from '@/i18n/i18n'
 
 const PAGE_SIZE = 50
 
@@ -44,6 +44,8 @@ function detailString(detail: AuditLog['detail']): string | null {
 }
 
 export default function LogsPage() {
+  const t = useT()
+  const rel = useRelTime()
   const [page, setPage] = useState(1)
   const { data, isLoading, isFetching } = useLogs(page, PAGE_SIZE)
 
@@ -55,7 +57,7 @@ export default function LogsPage() {
 
   return (
     <div>
-      <PageHeader title="Logs" description="Audit log" />
+      <PageHeader title={t('logs.title')} description={t('logs.subtitle')} />
 
       <Card>
         <CardContent className="p-0">
@@ -69,19 +71,19 @@ export default function LogsPage() {
             <div className="p-6">
               <EmptyState
                 icon={ScrollText}
-                title="No activity yet"
-                description="Admin actions will show up here as they happen."
+                title={t('logs.empty.title')}
+                description={t('logs.empty.desc')}
               />
             </div>
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-[140px]">Time</TableHead>
-                  <TableHead className="w-[160px]">Action</TableHead>
-                  <TableHead>Target</TableHead>
-                  <TableHead>Admin</TableHead>
-                  <TableHead className="w-[140px]">IP</TableHead>
+                  <TableHead className="w-[140px]">{t('logs.col.time')}</TableHead>
+                  <TableHead className="w-[160px]">{t('logs.col.action')}</TableHead>
+                  <TableHead>{t('logs.col.target')}</TableHead>
+                  <TableHead>{t('logs.col.admin')}</TableHead>
+                  <TableHead className="w-[140px]">{t('logs.col.ip')}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -93,7 +95,7 @@ export default function LogsPage() {
                         className="whitespace-nowrap text-muted-foreground"
                         title={new Date(log.created_at).toLocaleString()}
                       >
-                        {formatRelativeTime(log.created_at)}
+                        {rel(log.created_at)}
                       </TableCell>
                       <TableCell>
                         <Badge variant={actionVariant(log.action)} className="font-mono">
@@ -129,7 +131,7 @@ export default function LogsPage() {
       {items.length > 0 && (
         <div className="mt-4 flex items-center justify-between">
           <p className="text-sm text-muted-foreground">
-            Page {currentPage} of {totalPages} · {total} entries
+            {t('logs.pagination', { page: currentPage, total: totalPages, count: total })}
           </p>
           <div className="flex items-center gap-2">
             <Button
@@ -139,7 +141,7 @@ export default function LogsPage() {
               onClick={() => setPage((p) => Math.max(1, p - 1))}
             >
               <ChevronLeft className="h-4 w-4" />
-              Prev
+              {t('logs.prev')}
             </Button>
             <Button
               variant="outline"
@@ -147,7 +149,7 @@ export default function LogsPage() {
               disabled={currentPage >= totalPages || isFetching}
               onClick={() => setPage((p) => p + 1)}
             >
-              Next
+              {t('logs.next')}
               <ChevronRight className="h-4 w-4" />
             </Button>
           </div>

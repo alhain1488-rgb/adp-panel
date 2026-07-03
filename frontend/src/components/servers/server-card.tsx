@@ -15,7 +15,7 @@ import {
   Trash2,
 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
-import { cn, formatRelativeTime } from '@/lib/utils'
+import { cn } from '@/lib/utils'
 import { useMediaQuery } from '@/lib/use-media-query'
 import { EmptyState, UsageBar } from '@/components/common/misc'
 import { CheckEngineIcon } from '@/components/common/icons'
@@ -40,6 +40,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { useToast } from '@/components/ui/use-toast'
+import { useT, useRelTime } from '@/i18n/i18n'
 import { ServerFormDialog } from './server-form-dialog'
 import { InboundFormDialog } from './inbound-form-dialog'
 import {
@@ -56,11 +57,12 @@ import type { Inbound, Server } from '@/api/types'
 
 // Provisioning (engine install) indicator — SPEC §5.1.
 function ProvisionIndicator({ status }: { status: NonNullable<Server['provision_status']> }) {
+  const t = useT()
   if (status === 'installing' || status === 'pending') {
     return (
       <Badge variant="warning" className="gap-1.5">
         <Loader2 className="h-3 w-3 animate-spin" />
-        Installing engines
+        {t('serverCard.installingEngines')}
       </Badge>
     )
   }
@@ -68,7 +70,7 @@ function ProvisionIndicator({ status }: { status: NonNullable<Server['provision_
     return (
       <Badge variant="destructive" className="gap-1.5">
         <AlertTriangle className="h-3 w-3" />
-        Install failed
+        {t('serverCard.installFailed')}
       </Badge>
     )
   }
@@ -125,6 +127,8 @@ export function ServerCard({ server }: { server: Server }) {
   const toggleOpen = () => (isDesktop ? setModalOpen((v) => !v) : setExpanded((v) => !v))
 
   const { toast } = useToast()
+  const t = useT()
+  const rel = useRelTime()
   const checkServer = useCheckServer()
   const restartEngine = useRestartEngine(server.id)
   const deleteServer = useDeleteServer()
@@ -133,37 +137,37 @@ export function ServerCard({ server }: { server: Server }) {
   async function handleInstall() {
     try {
       await installServer.mutateAsync(server.id)
-      toast({ title: 'Installing engines', description: server.name })
+      toast({ title: t('serverCard.installingEngines'), description: server.name })
     } catch (err) {
-      toast({ variant: 'destructive', title: 'Install failed', description: errMsg(err) })
+      toast({ variant: 'destructive', title: t('serverCard.installFailed'), description: errMsg(err) })
     }
   }
 
   async function handleCheck() {
     try {
       await checkServer.mutateAsync(server.id)
-      toast({ title: 'Server checked', description: server.name })
+      toast({ title: t('serverCard.checked'), description: server.name })
     } catch (err) {
-      toast({ variant: 'destructive', title: 'Check failed', description: errMsg(err) })
+      toast({ variant: 'destructive', title: t('serverCard.checkFailed'), description: errMsg(err) })
     }
   }
 
   async function handleRestart(engine?: string) {
     try {
       await restartEngine.mutateAsync(engine)
-      toast({ title: engine ? `Restarted ${engine}` : 'Restarted all engines' })
+      toast({ title: engine ? t('serverCard.restartedEngine', { engine }) : t('serverCard.restartedAll') })
     } catch (err) {
-      toast({ variant: 'destructive', title: 'Restart failed', description: errMsg(err) })
+      toast({ variant: 'destructive', title: t('serverCard.restartFailed'), description: errMsg(err) })
     }
   }
 
   async function handleDelete() {
     try {
       await deleteServer.mutateAsync(server.id)
-      toast({ title: 'Server deleted', description: server.name })
+      toast({ title: t('serverCard.deleted'), description: server.name })
       setDeleteOpen(false)
     } catch (err) {
-      toast({ variant: 'destructive', title: 'Failed to delete server', description: errMsg(err) })
+      toast({ variant: 'destructive', title: t('serverCard.deleteFailed'), description: errMsg(err) })
     }
   }
 
@@ -206,7 +210,7 @@ export function ServerCard({ server }: { server: Server }) {
             {server.engines && server.engines.length > 0 ? (
               server.engines.map((e) => <EngineBadge key={e.engine} engine={e.engine} running={e.running} />)
             ) : (
-              <span className="text-xs text-muted-foreground">No engines</span>
+              <span className="text-xs text-muted-foreground">{t('serverCard.noEngines')}</span>
             )}
             <span className="flex items-center gap-1 text-xs text-muted-foreground">
               <EthernetPort className="h-3.5 w-3.5" />
@@ -214,7 +218,7 @@ export function ServerCard({ server }: { server: Server }) {
             </span>
             <span className="flex items-center gap-1 text-xs text-muted-foreground">
               <Activity className="h-3.5 w-3.5" />
-              {formatRelativeTime(server.last_sync_at)}
+              {rel(server.last_sync_at)}
             </span>
           </div>
         </div>
@@ -250,20 +254,20 @@ export function ServerCard({ server }: { server: Server }) {
       <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Delete server</DialogTitle>
+            <DialogTitle>{t('serverCard.delete.title')}</DialogTitle>
             <DialogDescription>
-              This will permanently remove{' '}
-              <span className="font-medium text-foreground">{server.name}</span> and its inbounds from the panel.
-              This action cannot be undone.
+              {t('serverCard.delete.descBefore')}{' '}
+              <span className="font-medium text-foreground">{server.name}</span>{' '}
+              {t('serverCard.delete.descAfter')}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button variant="ghost" onClick={() => setDeleteOpen(false)}>
-              Cancel
+              {t('common.cancel')}
             </Button>
             <Button variant="destructive" onClick={handleDelete} disabled={deleteServer.isPending}>
               {deleteServer.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
-              Delete
+              {t('common.delete')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -299,6 +303,7 @@ function ServerCardDetail({
   const { data: stats } = useServerStats(id)
   const { data: inbounds, isLoading: inboundsLoading } = useServerInbounds(id)
   const { toast } = useToast()
+  const t = useT()
   const updateInbound = useUpdateInbound(id)
   const deleteInbound = useDeleteInbound(id)
 
@@ -323,9 +328,9 @@ function ServerCardDetail({
           stream_settings: inbound.stream_settings,
         },
       })
-      toast({ title: enabled ? 'Inbound enabled' : 'Inbound disabled', description: inbound.tag })
+      toast({ title: enabled ? t('serverCard.inbound.enabled') : t('serverCard.inbound.disabled'), description: inbound.tag })
     } catch (err) {
-      toast({ variant: 'destructive', title: 'Failed to update inbound', description: errMsg(err) })
+      toast({ variant: 'destructive', title: t('serverCard.inbound.updateFailed'), description: errMsg(err) })
     } finally {
       setTogglingId(null)
     }
@@ -335,10 +340,10 @@ function ServerCardDetail({
     if (!deletingInbound) return
     try {
       await deleteInbound.mutateAsync(deletingInbound.id)
-      toast({ title: 'Inbound deleted', description: deletingInbound.tag })
+      toast({ title: t('serverCard.inbound.deleted'), description: deletingInbound.tag })
       setDeletingInbound(undefined)
     } catch (err) {
-      toast({ variant: 'destructive', title: 'Failed to delete inbound', description: errMsg(err) })
+      toast({ variant: 'destructive', title: t('serverCard.inbound.deleteFailed'), description: errMsg(err) })
     }
   }
 
@@ -354,18 +359,18 @@ function ServerCardDetail({
       <div className="flex flex-wrap items-center gap-2">
         <Button variant="outline" size="sm" onClick={onCheck} disabled={checking}>
           {checking ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-          Check
+          {t('serverCard.check')}
         </Button>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="outline" size="sm" disabled={restarting}>
               {restarting ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCw className="h-4 w-4" />}
-              Restart
+              {t('serverCard.restart')}
               <ChevronDown className="h-4 w-4" />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start">
-            <DropdownMenuItem onSelect={() => onRestart()}>All engines</DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => onRestart()}>{t('serverCard.allEngines')}</DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem onSelect={() => onRestart('xray')}>xray</DropdownMenuItem>
             <DropdownMenuItem onSelect={() => onRestart('hysteria')}>hysteria2</DropdownMenuItem>
@@ -373,11 +378,11 @@ function ServerCardDetail({
         </DropdownMenu>
         <Button variant="outline" size="sm" onClick={onEdit}>
           <Pencil className="h-4 w-4" />
-          Edit
+          {t('common.edit')}
         </Button>
         <Button variant="outline" size="sm" onClick={onReinstall} disabled={installing}>
           {installing ? <Loader2 className="h-4 w-4 animate-spin" /> : <HardDriveDownload className="h-4 w-4" />}
-          Reinstall engines
+          {t('serverCard.reinstallEngines')}
         </Button>
         <Button
           variant="ghost"
@@ -386,7 +391,7 @@ function ServerCardDetail({
           onClick={onDelete}
         >
           <Trash2 className="h-4 w-4" />
-          Delete
+          {t('common.delete')}
         </Button>
       </div>
 
@@ -411,15 +416,15 @@ function ServerCardDetail({
           <div>
             <p className="text-sm font-medium">
               {server.provision_status === 'failed'
-                ? 'Engine installation failed'
-                : 'Installing engines (xray + sing-box)…'}
+                ? t('serverCard.provision.failed')
+                : t('serverCard.provision.installing')}
             </p>
             {server.provision_error && (
               <p className="mt-1 break-words text-xs text-muted-foreground">{server.provision_error}</p>
             )}
             {server.provision_status !== 'failed' && (
               <p className="mt-1 text-xs text-muted-foreground">
-                Inbounds are not pushed to this node until installation completes.
+                {t('serverCard.provision.notPushed')}
               </p>
             )}
           </div>
@@ -430,7 +435,7 @@ function ServerCardDetail({
         <div className="flex items-start gap-3 rounded-md border border-destructive/40 bg-destructive/5 p-3">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
           <div>
-            <p className="text-sm font-medium text-destructive">Last sync failed</p>
+            <p className="text-sm font-medium text-destructive">{t('serverCard.lastSyncFailed')}</p>
             <p className="mt-1 break-words text-xs text-muted-foreground">{server.last_sync_error}</p>
           </div>
         </div>
@@ -440,29 +445,29 @@ function ServerCardDetail({
       <div className="space-y-3">
         <Card>
           <CardContent className="space-y-3 p-4">
-            <UsageBar label="CPU" percent={stats?.cpu_percent ?? 0} />
+            <UsageBar label={t('serverCard.cpu')} percent={stats?.cpu_percent ?? 0} />
             <UsageBar
-              label="RAM"
+              label={t('serverCard.ram')}
               percent={stats?.mem_percent ?? 0}
               detail={
                 stats ? `${(stats.mem_used_mb / 1024).toFixed(1)}/${(stats.mem_total_mb / 1024).toFixed(1)} GB` : undefined
               }
             />
             <UsageBar
-              label="Disk"
+              label={t('serverCard.disk')}
               percent={stats?.disk_percent ?? 0}
               detail={stats ? `${stats.disk_used_gb.toFixed(0)}/${stats.disk_total_gb.toFixed(0)} GB` : undefined}
             />
           </CardContent>
         </Card>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-          <MetricTile label="Uptime" value={formatUptime(stats?.uptime_seconds)} icon={Clock} />
-          <MetricTile label="Inbounds" value={server.inbound_count ?? inbounds?.length ?? 0} icon={EthernetPort} />
+          <MetricTile label={t('serverCard.uptime')} value={formatUptime(stats?.uptime_seconds)} icon={Clock} />
+          <MetricTile label={t('serverCard.inbounds')} value={server.inbound_count ?? inbounds?.length ?? 0} icon={EthernetPort} />
           <MetricTile
-            label="Engines"
+            label={t('serverCard.engines')}
             value={server.engines?.filter((e) => e.running).length ?? 0}
             icon={CheckEngineIcon}
-            hint={`${server.engines?.length ?? 0} detected`}
+            hint={t('serverCard.detected', { n: server.engines?.length ?? 0 })}
           />
         </div>
       </div>
@@ -485,7 +490,7 @@ function ServerCardDetail({
 
       {/* Inbounds */}
       <div className="flex items-center justify-between">
-        <h3 className="text-sm font-semibold">Inbounds</h3>
+        <h3 className="text-sm font-semibold">{t('serverCard.inbounds')}</h3>
         <Button
           size="sm"
           onClick={() => {
@@ -494,14 +499,14 @@ function ServerCardDetail({
           }}
         >
           <Plus className="h-4 w-4" />
-          Add inbound
+          {t('serverCard.addInbound')}
         </Button>
       </div>
 
       {inboundsLoading || !inbounds ? (
         <Skeleton className="h-32" />
       ) : inbounds.length === 0 ? (
-        <EmptyState icon={EthernetPort} title="No inbounds yet" description="Add an inbound to expose a protocol." />
+        <EmptyState icon={EthernetPort} title={t('serverCard.noInbounds.title')} description={t('serverCard.noInbounds.desc')} />
       ) : (
         <div className="space-y-2">
           {inbounds.map((ib) => (
@@ -513,7 +518,7 @@ function ServerCardDetail({
                 </div>
                 <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
                   <span className="font-mono tabular-nums">:{ib.port}</span>
-                  <span className="tabular-nums">{ib.client_count ?? 0} clients</span>
+                  <span className="tabular-nums">{t('serverCard.clientsCount', { n: ib.client_count ?? 0 })}</span>
                   {ib.remark && <span className="truncate">{ib.remark}</span>}
                 </div>
               </div>
@@ -521,11 +526,11 @@ function ServerCardDetail({
                 checked={ib.enabled}
                 disabled={togglingId === ib.id}
                 onCheckedChange={(v) => handleToggleInbound(ib, v)}
-                aria-label="Toggle inbound"
+                aria-label={t('serverCard.toggleInbound')}
               />
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" aria-label="Inbound actions">
+                  <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" aria-label={t('serverCard.inboundActions')}>
                     <MoreVertical className="h-4 w-4" />
                   </Button>
                 </DropdownMenuTrigger>
@@ -537,7 +542,7 @@ function ServerCardDetail({
                     }}
                   >
                     <Pencil className="h-4 w-4" />
-                    Edit
+                    {t('common.edit')}
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem
@@ -545,7 +550,7 @@ function ServerCardDetail({
                     onSelect={() => setDeletingInbound(ib)}
                   >
                     <Trash2 className="h-4 w-4" />
-                    Delete
+                    {t('common.delete')}
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
@@ -564,19 +569,20 @@ function ServerCardDetail({
       <Dialog open={!!deletingInbound} onOpenChange={(o) => !o && setDeletingInbound(undefined)}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Delete inbound</DialogTitle>
+            <DialogTitle>{t('serverCard.deleteInbound.title')}</DialogTitle>
             <DialogDescription>
-              This will permanently remove{' '}
-              <span className="font-medium text-foreground">{deletingInbound?.tag}</span> from this server.
+              {t('serverCard.deleteInbound.descBefore')}{' '}
+              <span className="font-medium text-foreground">{deletingInbound?.tag}</span>{' '}
+              {t('serverCard.deleteInbound.descAfter')}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button variant="ghost" onClick={() => setDeletingInbound(undefined)}>
-              Cancel
+              {t('common.cancel')}
             </Button>
             <Button variant="destructive" onClick={handleDeleteInbound} disabled={deleteInbound.isPending}>
               {deleteInbound.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
-              Delete
+              {t('common.delete')}
             </Button>
           </DialogFooter>
         </DialogContent>
