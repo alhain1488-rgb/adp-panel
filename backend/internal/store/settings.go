@@ -23,3 +23,9 @@ func (s *Store) SetSetting(ctx context.Context, key, value string) error {
 		ON CONFLICT(key) DO UPDATE SET value = excluded.value`, key, value)
 	return err
 }
+
+// DeleteSetting removes a settings key (no-op if absent).
+func (s *Store) DeleteSetting(ctx context.Context, key string) error {
+	_, err := s.db.ExecContext(ctx, "DELETE FROM settings WHERE key = ?", key)
+	return err
+}

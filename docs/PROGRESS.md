@@ -8,7 +8,9 @@
 > человеком. Проект запушен в **публичный** GitHub-репозиторий `alhain1488-rgb/adp-panel`, ветка
 > `build/mvp`; установка одной командой (`install.sh`). Последние фичи — **бэкапы** (ручной
 > Export/Import + авто-отправка в Telegram) и **очистка ноды перед установкой** (опция при добавлении
-> сервера), см. записи «Пост-9» ниже. Версия — `frontend/src/version.ts` (сейчас 0.8.4.0; бампать при
+> сервера), см. записи «Пост-9» ниже. **НА VPS развёрнута v0.8.4.0**; локально готовы, но ещё НЕ
+> запушены/не задеплоены: **локализация RU/EN + AmneziaWG 2.0** (v0.9.1.0) — верифицированы, ждут
+> `git push` + редеплой. Версия — `frontend/src/version.ts` (сейчас 0.9.1.0; бампать при
 > правках). Docker — через **Colima** локально;
 > на VPS — `docker compose up` (backend + Caddy). Данные деплоя (IP/SSH) — только в сессии, в
 > репозиторий не попали (проверено сканом всей истории). Дальше — по запросам человека.
@@ -349,3 +351,36 @@ before installing» с предупреждением о необратимос�
 unsupported OS → чистка НЕ выполняется); `go test/vet/gofmt` и `npm build/lint/test` — зелёные; UI —
 чекбокс рендерится/переключается на Add, отсутствует на Edit, чистая консоль; **adversarial-ревью
 безопасности деструктивного скрипта — 0 findings**. OpenAPI обновлён.
+
+## Пост-9 — AmneziaWG 2.0 как третий движок + локализация ✅ (v0.9.1.0)
+
+Два локальных коммита поверх origin: `afacd58` (локализация RU/EN + селектор форматов direct-domains)
+и `67caf16` (AmneziaWG 2.0, v0.9.0.0). Затем **верификация и корректирующие правки** (v0.9.1.0, эта запись).
+
+**AmneziaWG — что верифицировано и исправлено:**
+- **Формат `vpn://` сверен с исходником AmneziaVPN** (`amnezia-client` tag `4.8.19.0`, а не master —
+  на master ещё нет 2.0-параметров). Исправлено в `internal/amneziawg/vpnlink.go`: контейнер
+  `amnezia-awg2` (не `amnezia-awg`); obfuscation-ключи в `last_config` — **короткие** (`Jc/Jmin/Jmax/
+  S1–S4/H1–H4/I1–I5`), значения **строками**; base64url **без паддинга** (`RawURLEncoding`); `qCompress`
+  level 8; добавлены поля `mtu/persistent_keep_alive/allowed_ips/clientId/client_ip`, убран top-level
+  `port`. Импорт у AmneziaVPN проходит по наличию `containers` (config_version не нужен). **Кросс-проверка:**
+  независимый Python-декодер (как importController) успешно разобрал сгенерированную ссылку — все поля/типы
+  совпали.
+- **`DefaultParams()` — точные дефолты AmneziaVPN 2.0** (`Jc=3,Jmin=10,Jmax=30; S1=15,S2=18,S3=20,S4=23;
+  H1..H4` из protocols_defs; `I1` = крафт-пакет «под iCloud DNS»). Разделение серверного/клиентского
+  `.conf` подтверждено серверным шаблоном Amnezia (`server_scripts/awg/`): на сервере активны
+  `Jc/S/H`, а `I1–I5` закомментированы → мой сервер их не пишет (верно), клиент пишет (верно).
+- **Sync-движок:** `applyEngine` теперь `enable`+`restart` (динамический `awg-quick@awgN` переживает
+  ребут ноды); добавлен `reconcileAWG` — удаление/выключение AWG-inbound-а сносит осиротевший сервис
+  и конфиг (`systemctl disable --now` + `rm` + чистка idempotency-ключа), т.к. per-interface сервисы
+  сами не «самолечатся» как единый xray/sing-box. Новый тест на тир-даун + `store.DeleteSetting`.
+- **Провижининг ноды переработан** (`CmdInstallAWG`): основной путь — DKMS-модуль ядра из PPA
+  `ppa:amnezia/ppa` (`amneziawg` + `amneziawg-tools`, нужны `linux-headers-$(uname -r)`), Go не требуется;
+  fallback (Debian/без заголовков) — сборка tools из исходников + userspace `amneziawg-go` с установкой
+  свежего Go (apt-овый часто слишком стар для `@latest`). Итоговая строка `[awg] tools/kmod/go` для
+  проверки на деплое. Скрипт валиден `bash -n`/`sh -n`.
+
+**Проверено:** backend `go build/vet/gofmt/test` — 13 пакетов зелёные; frontend `build/lint/test` (7/7);
+превью AWG-UI в браузере — форма inbound (порт 51820, AWG-режим, скрыты reality/sniffing/preview) и
+секция клиента (`vpn://` + QR + скачивание `.conf`), консоль чистая. **Осталось:** проверить `[awg]`-статус
+провижина на живой ноде при деплое → затем `git push` + редеплой на VPS.

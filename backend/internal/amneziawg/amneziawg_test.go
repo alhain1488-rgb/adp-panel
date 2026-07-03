@@ -3,6 +3,7 @@ package amneziawg
 import (
 	"encoding/base64"
 	"encoding/json"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -68,20 +69,20 @@ func TestServerAndClientConfigMatchObfuscation(t *testing.T) {
 
 	// Server side.
 	for _, want := range []string{"[Interface]", "Address = 10.9.9.1/24", "ListenPort = 51820",
-		"Jc = 4", "H1 = 1234567", "PostUp", "[Peer]", "# phone",
+		"Jc = 3", "H1 = 1020325451", "PostUp", "[Peer]", "# phone",
 		"PublicKey = " + cpub, "AllowedIPs = 10.9.9.2/32"} {
 		if !strings.Contains(srv, want) {
 			t.Errorf("server config missing %q", want)
 		}
 	}
-	// The server must NOT carry the client-only CPS packet.
+	// The server must NOT carry the client-only CPS packet (I1..I5).
 	if strings.Contains(srv, "I1 =") {
 		t.Error("server config should not include I1 (client-only CPS)")
 	}
 
-	// Client side.
+	// Client side (I1 is AmneziaWG 2.0's fake-DNS special-junk template).
 	for _, want := range []string{"Address = 10.9.9.2/32", "DNS = 1.1.1.1", "MTU = 1280",
-		"I1 = <r 128>", "PublicKey = " + iface.PublicKey, "Endpoint = 203.0.113.7:51820",
+		"I1 = <r 2><b 0x8580", "PublicKey = " + iface.PublicKey, "Endpoint = 203.0.113.7:51820",
 		"AllowedIPs = 0.0.0.0/0", "PersistentKeepalive = 25"} {
 		if !strings.Contains(cli, want) {
 			t.Errorf("client config missing %q", want)
@@ -89,8 +90,8 @@ func TestServerAndClientConfigMatchObfuscation(t *testing.T) {
 	}
 
 	// The obfuscation set must be byte-identical on both ends (handshake contract).
-	for _, want := range []string{"Jc = 4", "Jmin = 40", "Jmax = 90",
-		"S1 = 50", "S2 = 40", "S3 = 12", "S4 = 8", "H1 = 1234567", "H4 = 4567890"} {
+	for _, want := range []string{"Jc = 3", "Jmin = 10", "Jmax = 30",
+		"S1 = 15", "S2 = 18", "S3 = 20", "S4 = 23", "H1 = 1020325451", "H4 = 2528465083"} {
 		if !strings.Contains(srv, want) || !strings.Contains(cli, want) {
 			t.Errorf("obfuscation param %q not identical on both sides", want)
 		}
@@ -127,8 +128,9 @@ func TestVpnLinkDecodable(t *testing.T) {
 		t.Fatalf("missing vpn:// prefix: %q", link[:16])
 	}
 
-	// Decode the transport back to the container and assert structure.
-	blob, err := base64.URLEncoding.DecodeString(strings.TrimPrefix(link, "vpn://"))
+	// Decode the transport back to the container and assert structure. The link
+	// is base64url with padding stripped, so decode with RawURLEncoding.
+	blob, err := base64.RawURLEncoding.DecodeString(strings.TrimPrefix(link, "vpn://"))
 	if err != nil {
 		t.Fatalf("base64: %v", err)
 	}
@@ -149,22 +151,23 @@ func TestVpnLinkDecodable(t *testing.T) {
 	if err := json.Unmarshal(raw, &container); err != nil {
 		t.Fatalf("container json: %v", err)
 	}
-	if container.HostName != "203.0.113.7" || container.DefaultContainer != "amnezia-awg" {
+	if container.HostName != "203.0.113.7" || container.DefaultContainer != "amnezia-awg2" {
 		t.Fatalf("unexpected container: %+v", container)
 	}
-	if len(container.Containers) != 1 {
-		t.Fatalf("want 1 container, got %d", len(container.Containers))
+	if len(container.Containers) != 1 || container.Containers[0].Container != "amnezia-awg2" {
+		t.Fatalf("want 1 amnezia-awg2 container, got %+v", container.Containers)
 	}
+	// Obfuscation params use SHORT keys with STRING values inside last_config.
 	var last struct {
-		JunkPacketCount       int    `json:"junkPacketCount"`
-		InitPacketMagicHeader string `json:"initPacketMagicHeader"`
-		IsObfuscationEnabled  bool   `json:"isObfuscationEnabled"`
-		Config                string `json:"config"`
+		Jc                   string `json:"Jc"`
+		H1                   string `json:"H1"`
+		IsObfuscationEnabled bool   `json:"isObfuscationEnabled"`
+		Config               string `json:"config"`
 	}
 	if err := json.Unmarshal([]byte(container.Containers[0].AWG.LastConfig), &last); err != nil {
 		t.Fatalf("last_config json: %v", err)
 	}
-	if last.JunkPacketCount != iface.Params.Jc || last.InitPacketMagicHeader != iface.Params.H1 {
+	if last.Jc != strconv.Itoa(iface.Params.Jc) || last.H1 != iface.Params.H1 {
 		t.Fatalf("last_config params mismatch: %+v", last)
 	}
 	if !last.IsObfuscationEnabled || !strings.Contains(last.Config, "PrivateKey = "+cpriv) {

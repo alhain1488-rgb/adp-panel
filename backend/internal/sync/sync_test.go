@@ -9,6 +9,7 @@ import (
 
 	"github.com/adp/panel/internal/amneziawg"
 	"github.com/adp/panel/internal/db"
+	"github.com/adp/panel/internal/protocols"
 	"github.com/adp/panel/internal/ssh"
 	"github.com/adp/panel/internal/ssh/sshtest"
 	"github.com/adp/panel/internal/store"
@@ -254,5 +255,56 @@ func TestBuildAWGPlan(t *testing.T) {
 	// The client-only CPS packet must not leak into the server interface.
 	if strings.Contains(c, "I1 = ") {
 		t.Error("server .conf should not carry I1")
+	}
+}
+
+func TestReconcileAWG_TearsDownOrphans(t *testing.T) {
+	database, err := db.Open(filepath.Join(t.TempDir(), "panel.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = database.Close() })
+	st := store.New(database)
+	ctx := context.Background()
+
+	// awg7 is still desired; awg99's inbound was removed. Seed both idempotency
+	// markers so we can prove only the orphan's is cleared.
+	_ = st.SetSetting(ctx, "sync:1:amneziawg:awg7", "hash7")
+	_ = st.SetSetting(ctx, "sync:1:amneziawg:awg99", "hash99")
+
+	runner := &sshtest.MockRunner{
+		Handler: func(cmd, _ string) (ssh.Result, error) {
+			if strings.Contains(cmd, "ls -1 '/etc/amnezia/amneziawg'") {
+				// A desired iface, an orphan, and a non-matching stray file.
+				return ssh.Result{Stdout: "awg7.conf\nawg99.conf\nkeep-me.txt\n"}, nil
+			}
+			return ssh.Result{}, nil
+		},
+	}
+	svc := NewService(st, &fakeConnector{runner: runner}, fakeKeyer{})
+	plans := []enginePlan{{engine: protocols.EngineAmneziaWG, service: "awg-quick@awg7"}}
+
+	svc.reconcileAWG(ctx, runner, 1, plans)
+
+	// Orphan awg99 is stopped, disabled and its config removed.
+	if !runner.Ran("systemctl disable --now awg-quick@awg99") {
+		t.Error("orphan awg99 was not torn down")
+	}
+	if !runner.Ran("rm -f '/etc/amnezia/amneziawg/awg99.conf'") {
+		t.Error("orphan awg99 config was not removed")
+	}
+	// The desired interface and the stray file are left untouched.
+	if runner.Ran("disable --now awg-quick@awg7") {
+		t.Error("desired awg7 must not be torn down")
+	}
+	if runner.Ran("keep-me.txt") {
+		t.Error("non-awg files must never be touched")
+	}
+	// Only the orphan's idempotency marker is cleared.
+	if v, _ := st.GetSetting(ctx, "sync:1:amneziawg:awg99"); v != "" {
+		t.Errorf("orphan marker not cleared: %q", v)
+	}
+	if v, _ := st.GetSetting(ctx, "sync:1:amneziawg:awg7"); v != "hash7" {
+		t.Errorf("desired marker was wrongly cleared: %q", v)
 	}
 }

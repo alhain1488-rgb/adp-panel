@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/adp/panel/internal/amneziawg"
@@ -22,6 +23,11 @@ import (
 
 // awgConfigDir is where amneziawg-tools' awg-quick reads interface configs.
 const awgConfigDir = "/etc/amnezia/amneziawg"
+
+// awgConfName matches a per-inbound AmneziaWG interface config file (awgN.conf).
+// The reconcile step only ever touches files that match this exact shape, so a
+// stray file in the config dir is never removed.
+var awgConfName = regexp.MustCompile(`^awg[0-9]+\.conf$`)
 
 // ErrNotProvisioned is returned when a node has not finished engine install; the
 // sync engine refuses to push to it.
@@ -95,8 +101,44 @@ func (s *Service) Sync(ctx context.Context, serverID int64) ([]EngineResult, err
 		results = append(results, res)
 	}
 
+	// Tear down any AmneziaWG interfaces whose inbound was removed or disabled.
+	s.reconcileAWG(ctx, runner, serverID, plans)
+
 	_ = s.store.SetSync(ctx, serverID, "")
 	return results, nil
+}
+
+// reconcileAWG stops and removes AmneziaWG interfaces on the node that are no
+// longer desired (their inbound was deleted or disabled). Unlike xray/hysteria —
+// single services reconfigured in place — each AmneziaWG inbound is its own
+// awg-quick@awgN service, so a removed inbound must be explicitly torn down or it
+// keeps serving its old peers. Best-effort: node hiccups here never fail a sync.
+func (s *Service) reconcileAWG(ctx context.Context, r ssh.Runner, serverID int64, plans []enginePlan) {
+	desired := map[string]bool{}
+	for _, p := range plans {
+		if p.engine == protocols.EngineAmneziaWG {
+			desired[strings.TrimPrefix(p.service, "awg-quick@")] = true
+		}
+	}
+	out, err := r.Run(ctx, fmt.Sprintf("ls -1 %s 2>/dev/null", shellQuote(awgConfigDir)))
+	if err != nil || out.ExitCode != 0 {
+		return
+	}
+	for _, line := range strings.Split(out.Stdout, "\n") {
+		name := strings.TrimSpace(line)
+		if !awgConfName.MatchString(name) {
+			continue
+		}
+		iface := strings.TrimSuffix(name, ".conf") // regex-validated: ^awg[0-9]+$
+		if desired[iface] {
+			continue
+		}
+		conf := awgConfigDir + "/" + name
+		_, _ = r.Run(ctx, fmt.Sprintf("systemctl disable --now awg-quick@%s >/dev/null 2>&1; rm -f %s %s",
+			iface, shellQuote(conf), shellQuote(conf+".adp.bak")))
+		// Drop the idempotency marker so a re-created inbound re-applies cleanly.
+		_ = s.store.DeleteSetting(ctx, fmt.Sprintf("sync:%d:amneziawg:%s", serverID, iface))
+	}
 }
 
 // Async pushes a server's config in the background (fire-and-forget). Errors are
@@ -289,7 +331,14 @@ func (s *Service) applyEngine(ctx context.Context, r ssh.Runner, serverID int64,
 		return res, fmt.Errorf("config rejected by engine: %s", detail)
 	}
 
-	if out, err := r.Run(ctx, fmt.Sprintf("systemctl restart %s", shellQuote(p.service))); err != nil {
+	// enable then restart: enabling makes the unit persist across reboots. This
+	// matters most for AmneziaWG, whose awg-quick@awgN instances are created
+	// dynamically per inbound and can't be enabled ahead of time at provision.
+	// For xray/hysteria (already enabled) the enable is a harmless no-op. The
+	// restart's exit code governs, so a benign enable warning can't fail the sync.
+	restartCmd := fmt.Sprintf("systemctl enable %s >/dev/null 2>&1; systemctl restart %s",
+		shellQuote(p.service), shellQuote(p.service))
+	if out, err := r.Run(ctx, restartCmd); err != nil {
 		return res, fmt.Errorf("restart %s: %w", p.service, err)
 	} else if out.ExitCode != 0 {
 		return res, fmt.Errorf("restart %s: exit %d: %s", p.service, out.ExitCode, strings.TrimSpace(out.Stderr))

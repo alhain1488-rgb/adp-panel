@@ -66,15 +66,19 @@ type Params struct {
 	I5   string `json:"i5,omitempty"`
 }
 
-// DefaultParams returns a sane AmneziaWG 2.0 default set. NOTE: the exact
-// canonical ranges vary across Amnezia docs; these are reasonable defaults and
-// should be confirmed against amneziawg-go before treating as authoritative.
+// DefaultParams returns AmneziaWG 2.0's canonical default obfuscation set, taken
+// verbatim from AmneziaVPN's own defaults (amnezia-client protocols_defs, tag
+// 4.8.19.0): Jc/Jmin/Jmax, S1..S4, the four magic headers H1..H4, and the I1
+// "special junk" template — a crafted packet that mimics an iCloud DNS lookup.
+// Using AmneziaVPN's exact values maximizes interop with the AmneziaVPN app. The
+// set MUST stay identical on the server and every client of an inbound.
 func DefaultParams() Params {
 	return Params{
-		Jc: 4, Jmin: 40, Jmax: 90,
-		S1: 50, S2: 40, S3: 12, S4: 8,
-		H1: "1234567", H2: "2345678", H3: "3456789", H4: "4567890",
-		I1: "<r 128>",
+		Jc: 3, Jmin: 10, Jmax: 30,
+		S1: 15, S2: 18, S3: 20, S4: 23,
+		// H3 = underload header, H4 = transport header (Amnezia's field order).
+		H1: "1020325451", H2: "3288052141", H3: "1766607858", H4: "2528465083",
+		I1: "<r 2><b 0x858000010001000000000669636c6f756403636f6d0000010001c00c000100010000105a00044d583737>",
 	}
 }
 

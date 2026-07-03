@@ -44,34 +44,46 @@ const (
 )
 
 // CmdInstallAWG installs the AmneziaWG 2.0 engine on the node (best-effort;
-// always exits 0 so a node that won't host AmneziaWG isn't blocked). It sets up
-// amneziawg-tools (awg-quick + the awg-quick@ systemd template) via the Amnezia
-// PPA or a source build, installs amneziawg-go (userspace, the confirmed 2.0
-// implementation) via `go install`, points awg-quick at that userspace impl, and
-// enables IP forwarding. NOTE: this path needs validation on a real node — the
-// exact awg config dir / userspace wiring can vary by distro/version.
+// always exits 0 so a node that won't host AmneziaWG isn't blocked). Primary
+// path: the Amnezia PPA's DKMS kernel module (`amneziawg`) + `amneziawg-tools`
+// (awg/awg-quick + the awg-quick@ systemd template) — the canonical, Go-free
+// install. Fallback (Debian, or a node without matching kernel headers): source
+// -build the tools and run the userspace `amneziawg-go`, installing a modern Go
+// first since distro Go is often too old for `go install ...@latest`. It also
+// enables IP forwarding and creates the config dir. The final `[awg]` line
+// reports what actually landed (tools / kmod / go) so a deploy can verify it.
+// NOTE: still worth confirming the `[awg]` status output on the target node.
 const CmdInstallAWG = installEnv + `
 set +e
 sysctl -w net.ipv4.ip_forward=1 >/dev/null 2>&1
 grep -q '^net.ipv4.ip_forward=1' /etc/sysctl.conf || echo 'net.ipv4.ip_forward=1' >> /etc/sysctl.conf
 mkdir -p /etc/amnezia/amneziawg
-if ! command -v awg-quick >/dev/null 2>&1; then
-  apt-get install -y --no-install-recommends software-properties-common iptables git build-essential >/dev/null 2>&1
+# Primary: Amnezia PPA — DKMS kernel module + tools (no userspace Go needed).
+if ! command -v awg-quick >/dev/null 2>&1 || ! modinfo amneziawg >/dev/null 2>&1; then
+  apt-get install -y --no-install-recommends software-properties-common python3-launchpadlib gnupg2 iptables dkms build-essential "linux-headers-$(uname -r)" >/dev/null 2>&1
   add-apt-repository -y ppa:amnezia/ppa >/dev/null 2>&1 && apt-get update -y >/dev/null 2>&1
-  apt-get install -y amneziawg-tools >/dev/null 2>&1
+  apt-get install -y amneziawg amneziawg-tools >/dev/null 2>&1
+fi
+# Fallback: no kernel module (Debian / missing headers / container) -> userspace amneziawg-go.
+if ! modinfo amneziawg >/dev/null 2>&1; then
   if ! command -v awg-quick >/dev/null 2>&1; then
+    apt-get install -y --no-install-recommends git build-essential iptables >/dev/null 2>&1
     git clone --depth 1 https://github.com/amnezia-vpn/amneziawg-tools /tmp/awg-tools >/dev/null 2>&1
     make -C /tmp/awg-tools/src >/dev/null 2>&1 && make -C /tmp/awg-tools/src install WITH_SYSTEMDUNITS=yes >/dev/null 2>&1
   fi
+  if ! command -v amneziawg-go >/dev/null 2>&1; then
+    GO="$(command -v go || true)"
+    if [ -z "$GO" ] || ! "$GO" version 2>/dev/null | grep -qE 'go1\.(2[0-9]|[3-9][0-9])'; then
+      curl -fsSL "https://go.dev/dl/go1.22.5.linux-$(dpkg --print-architecture).tar.gz" -o /tmp/go.tgz >/dev/null 2>&1 \
+        && rm -rf /usr/local/go && tar -C /usr/local -xzf /tmp/go.tgz >/dev/null 2>&1 && GO=/usr/local/go/bin/go
+    fi
+    [ -n "$GO" ] && HOME=/root GOBIN=/usr/local/bin "$GO" install github.com/amnezia-vpn/amneziawg-go@latest >/dev/null 2>&1
+  fi
+  mkdir -p /etc/systemd/system/awg-quick@.service.d
+  printf '[Service]\nEnvironment=WG_QUICK_USERSPACE_IMPLEMENTATION=amneziawg-go\n' > /etc/systemd/system/awg-quick@.service.d/userspace.conf
 fi
-if ! command -v amneziawg-go >/dev/null 2>&1; then
-  command -v go >/dev/null 2>&1 || apt-get install -y --no-install-recommends golang-go >/dev/null 2>&1
-  GOBIN=/usr/local/bin go install github.com/amnezia-vpn/amneziawg-go@latest >/dev/null 2>&1
-fi
-mkdir -p /etc/systemd/system/awg-quick@.service.d
-printf '[Service]\nEnvironment=WG_QUICK_USERSPACE_IMPLEMENTATION=amneziawg-go\n' > /etc/systemd/system/awg-quick@.service.d/userspace.conf
 systemctl daemon-reload >/dev/null 2>&1
-echo "[awg] tools=$(command -v awg-quick || echo none) go=$(command -v amneziawg-go || echo none)"
+echo "[awg] tools=$(command -v awg-quick || echo none) kmod=$(modinfo amneziawg >/dev/null 2>&1 && echo yes || echo no) go=$(command -v amneziawg-go || echo none)"
 exit 0`
 
 // CmdCleanNode is the optional, opt-in pre-provision cleanup. It removes
