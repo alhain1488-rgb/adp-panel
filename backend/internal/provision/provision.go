@@ -86,6 +86,12 @@ systemctl daemon-reload >/dev/null 2>&1
 echo "[awg] tools=$(command -v awg-quick || echo none) kmod=$(modinfo amneziawg >/dev/null 2>&1 && echo yes || echo no) go=$(command -v amneziawg-go || echo none)"
 exit 0`
 
+// CmdAWGStatus reports the AmneziaWG engine state on a node WITHOUT installing
+// anything (used by Check to keep the reported engines consistent with what
+// provisioning installed). Same "[awg] tools=.. kmod=.. go=.." shape as the tail
+// of CmdInstallAWG, so ParseAWGStatus reads either.
+const CmdAWGStatus = `echo "[awg] tools=$(command -v awg-quick || echo none) kmod=$(modinfo amneziawg >/dev/null 2>&1 && echo yes || echo no) go=$(command -v amneziawg-go || echo none)"`
+
 // CmdCleanNode is the optional, opt-in pre-provision cleanup. It removes
 // competing proxy/VPN stacks and panels so their services stop squatting the
 // ports and memory the panel's engines need. It is deliberately *targeted*: it
@@ -188,7 +194,7 @@ func (p *Provisioner) Provision(ctx context.Context, r ssh.Runner, host, hyServi
 	}
 	// AmneziaWG is a best-effort third engine: install it, but never fail the
 	// whole provision over it (a node that won't host AmneziaWG still installs).
-	p.ensureAmneziaWG(ctx, r)
+	awg := p.ensureAmneziaWG(ctx, r)
 
 	certPath, keyPath, err := p.ensureCert(ctx, r, host)
 	if err != nil {
@@ -205,6 +211,7 @@ func (p *Provisioner) Provision(ctx context.Context, r ssh.Runner, host, hyServi
 		Engines: []EngineInfo{
 			{Engine: "xray", Version: xrayVer, ServiceName: "xray", Running: true},
 			{Engine: "hysteria", Version: singVer, ServiceName: hyService, Running: true},
+			awg,
 		},
 	}, nil
 }
@@ -229,8 +236,41 @@ func (p *Provisioner) clean(ctx context.Context, r ssh.Runner) error {
 
 // ensureAmneziaWG installs the AmneziaWG 2.0 engine (best-effort; errors are
 // swallowed so provisioning of the core engines is never blocked by it).
-func (p *Provisioner) ensureAmneziaWG(ctx context.Context, r ssh.Runner) {
-	_, _ = r.Run(ctx, CmdInstallAWG)
+func (p *Provisioner) ensureAmneziaWG(ctx context.Context, r ssh.Runner) EngineInfo {
+	res, _ := r.Run(ctx, CmdInstallAWG)
+	return ParseAWGStatus(res.Stdout)
+}
+
+// ParseAWGStatus turns an "[awg] tools=.. kmod=.. go=.." status line into an
+// EngineInfo so provisioning and Check report whether AmneziaWG actually landed
+// (kernel module vs userspace vs none) instead of silently discarding the result.
+// Running == the awg-quick tool is present; Version reflects the implementation.
+func ParseAWGStatus(out string) EngineInfo {
+	tools, kmod, gobin := "", "", ""
+	for _, f := range strings.Fields(out) {
+		switch {
+		case strings.HasPrefix(f, "tools="):
+			tools = strings.TrimPrefix(f, "tools=")
+		case strings.HasPrefix(f, "kmod="):
+			kmod = strings.TrimPrefix(f, "kmod=")
+		case strings.HasPrefix(f, "go="):
+			gobin = strings.TrimPrefix(f, "go=")
+		}
+	}
+	toolsOK := tools != "" && tools != "none"
+	ver := "not installed"
+	switch {
+	case kmod == "yes":
+		ver = "kernel module"
+	case gobin != "" && gobin != "none":
+		ver = "userspace (amneziawg-go)"
+	}
+	return EngineInfo{
+		Engine:      "amneziawg",
+		Version:     ver,
+		ServiceName: "awg-quick@",
+		Running:     toolsOK && ver != "not installed",
+	}
 }
 
 // aptPrep updates apt and pre-installs the installers' dependencies.

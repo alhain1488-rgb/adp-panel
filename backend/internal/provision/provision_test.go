@@ -62,11 +62,14 @@ func TestProvision_FreshInstall(t *testing.T) {
 	if !r.Ran("openssl req -x509") {
 		t.Error("expected self-signed cert generation")
 	}
-	if len(res.Engines) != 2 {
-		t.Fatalf("engines = %d, want 2", len(res.Engines))
+	if len(res.Engines) != 3 {
+		t.Fatalf("engines = %d, want 3 (xray, hysteria, amneziawg)", len(res.Engines))
 	}
 	if !strings.Contains(res.Engines[0].Version, "1.8.24") {
 		t.Errorf("xray version = %q", res.Engines[0].Version)
+	}
+	if res.Engines[2].Engine != "amneziawg" {
+		t.Errorf("third engine = %q, want amneziawg", res.Engines[2].Engine)
 	}
 	if res.CertPath != DefaultCertPath {
 		t.Errorf("cert path = %q", res.CertPath)
@@ -120,7 +123,29 @@ func TestProvision_Idempotent(t *testing.T) {
 	if r.Ran("install-release.sh") || r.Ran("deb-install.sh") {
 		t.Error("must not reinstall when engines are present")
 	}
-	if len(res.Engines) != 2 {
-		t.Errorf("engines = %d, want 2", len(res.Engines))
+	if len(res.Engines) != 3 {
+		t.Errorf("engines = %d, want 3", len(res.Engines))
+	}
+}
+
+func TestParseAWGStatus(t *testing.T) {
+	cases := []struct {
+		out         string
+		wantVersion string
+		wantRunning bool
+	}{
+		{"[awg] tools=/usr/bin/awg-quick kmod=yes go=none", "kernel module", true},
+		{"[awg] tools=/usr/bin/awg-quick kmod=no go=/usr/local/bin/amneziawg-go", "userspace (amneziawg-go)", true},
+		{"[awg] tools=none kmod=no go=none", "not installed", false},
+	}
+	for _, c := range cases {
+		got := ParseAWGStatus(c.out)
+		if got.Engine != "amneziawg" {
+			t.Errorf("engine = %q", got.Engine)
+		}
+		if got.Version != c.wantVersion || got.Running != c.wantRunning {
+			t.Errorf("ParseAWGStatus(%q) = {%q, running=%v}, want {%q, running=%v}",
+				c.out, got.Version, got.Running, c.wantVersion, c.wantRunning)
+		}
 	}
 }

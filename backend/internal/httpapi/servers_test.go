@@ -86,11 +86,14 @@ func TestServers_Check(t *testing.T) {
 	}
 	var engines []map[string]any
 	_ = json.Unmarshal(out.Engines, &engines)
-	if len(engines) != 2 {
+	if len(engines) != 3 {
 		t.Fatalf("engines = %v", engines)
 	}
 	if engines[0]["running"] != true {
 		t.Errorf("xray should be running: %v", engines[0])
+	}
+	if engines[2]["engine"] != "amneziawg" {
+		t.Errorf("third engine should be amneziawg: %v", engines[2])
 	}
 }
 

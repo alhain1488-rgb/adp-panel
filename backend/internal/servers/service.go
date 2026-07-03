@@ -314,6 +314,9 @@ func (s *Service) detectEngines(ctx context.Context, r ssh.Runner, srv *store.Se
 			Running:     s.isActive(ctx, r, srv.HysteriaServiceName),
 			Version:     s.trimRun(ctx, r, "sing-box version 2>/dev/null | head -n1 || true"),
 		},
+		// AmneziaWG has no single service (one awg-quick@ per inbound); report its
+		// engine availability so Check stays consistent with what provisioning installed.
+		provision.ParseAWGStatus(s.trimRun(ctx, r, provision.CmdAWGStatus)),
 	}
 }
 
