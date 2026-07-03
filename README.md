@@ -1,5 +1,7 @@
 # Absolutely Disgusting Panel
 
+РАФОН - ЛОХ
+
 A self-hosted web panel to manage several VPS running **Xray** and **Hysteria2**
 proxies from one place — for **personal use**. One panel on a main VPS controls the
 proxies on all your nodes over SSH: servers, inbounds of many protocols, clients,
