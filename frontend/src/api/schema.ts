@@ -1956,6 +1956,7 @@ export interface components {
             subscription_url?: string;
             enabled: boolean;
             remark?: string;
+            email?: string;
             inbound_ids?: number[];
             grants?: components["schemas"]["ClientGrant"][];
             /** Format: date-time */
@@ -1976,6 +1977,7 @@ export interface components {
         ClientInput: {
             name: string;
             remark?: string;
+            email?: string;
         };
         ClientInboundsInput: {
             /** @description Full desired set of granted inbound ids. */

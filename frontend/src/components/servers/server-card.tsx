@@ -114,6 +114,15 @@ function formatUptime(seconds?: number): string {
   return `${mins}m`
 }
 
+// shortEngineVersion pulls a concise version out of an engine's version string
+// ("Xray 26.3.27 (…)" -> "26.3.27", "sing-box version 1.13.14" -> "1.13.14"),
+// falling back to the raw text ("kernel module") when there's no version number.
+function shortEngineVersion(v?: string): string {
+  if (!v) return ''
+  const m = v.match(/\d+\.\d+(?:\.\d+)*/)
+  return m ? m[0] : v
+}
+
 export function ServerCard({ server }: { server: Server }) {
   // Desktop (md+, where cards sit in a multi-column grid): open details in a modal
   // so the grid never reflows. Mobile (single column): expand inline in place.
@@ -133,6 +142,9 @@ export function ServerCard({ server }: { server: Server }) {
   const restartEngine = useRestartEngine(server.id)
   const deleteServer = useDeleteServer()
   const installServer = useInstallServer()
+  // Live host metrics for the at-a-glance card. Desktop only (each fetch is an
+  // SSH round-trip), and skipped for unreachable nodes.
+  const { data: stats } = useServerStats(server.id, isDesktop && server.status !== 'error')
 
   async function handleInstall() {
     try {
@@ -194,7 +206,7 @@ export function ServerCard({ server }: { server: Server }) {
         className="flex w-full items-start justify-between gap-2 p-5 text-left"
         aria-expanded={isOpen}
       >
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <span className="truncate font-semibold">{server.name}</span>
             <StatusBadge status={server.status} />
@@ -202,28 +214,72 @@ export function ServerCard({ server }: { server: Server }) {
               <ProvisionIndicator status={server.provision_status} />
             )}
           </div>
+
+          {/* Location: city, country · host · IP · ASN */}
           <p className="mt-0.5 truncate text-xs text-muted-foreground">
-            {server.geo_country ? `${server.geo_country} · ` : ''}
-            {server.host}
+            {[
+              server.geo_city && server.geo_country
+                ? `${server.geo_city}, ${server.geo_country}`
+                : server.geo_country,
+              server.host,
+              server.ip && server.ip !== server.host ? server.ip : null,
+              server.geo_asn,
+            ]
+              .filter(Boolean)
+              .join(' · ')}
           </p>
-          <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1.5">
+
+          {/* Engines with versions */}
+          <div className="mt-3 flex flex-wrap items-center gap-x-2.5 gap-y-1.5">
             {server.engines && server.engines.length > 0 ? (
-              server.engines.map((e) => <EngineBadge key={e.engine} engine={e.engine} running={e.running} />)
+              server.engines.map((e) => (
+                <span key={e.engine} className="inline-flex items-center gap-1.5">
+                  <EngineBadge engine={e.engine} running={e.running} />
+                  {e.version && (
+                    <span className="font-mono text-[11px] text-muted-foreground">
+                      {shortEngineVersion(e.version)}
+                    </span>
+                  )}
+                </span>
+              ))
             ) : (
               <span className="text-xs text-muted-foreground">{t('serverCard.noEngines')}</span>
             )}
-            <span className="flex items-center gap-1 text-xs text-muted-foreground">
+          </div>
+
+          {/* Desktop: live CPU / RAM / Disk at a glance */}
+          {isDesktop && stats && (
+            <div className="mt-3 grid grid-cols-3 gap-3">
+              <UsageBar label={t('serverCard.cpu')} percent={stats.cpu_percent} />
+              <UsageBar label={t('serverCard.ram')} percent={stats.mem_percent} />
+              <UsageBar label={t('serverCard.disk')} percent={stats.disk_percent} />
+            </div>
+          )}
+
+          {/* Inbound count + last sync */}
+          <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+            <span className="flex items-center gap-1">
               <EthernetPort className="h-3.5 w-3.5" />
-              {server.inbound_count ?? 0}
+              {t('serverCard.inboundsN', { n: server.inbound_count ?? 0 })}
             </span>
-            <span className="flex items-center gap-1 text-xs text-muted-foreground">
+            <span className="flex items-center gap-1">
               <Activity className="h-3.5 w-3.5" />
               {rel(server.last_sync_at)}
             </span>
           </div>
+
+          {/* Inline problem chip so failures are visible without expanding */}
+          {(server.last_sync_error || server.provision_status === 'failed') && (
+            <div className="mt-3 flex items-center gap-2 rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-xs text-destructive">
+              <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+              <span className="truncate">
+                {server.last_sync_error || t('serverCard.installFailed')}
+              </span>
+            </div>
+          )}
         </div>
         <ChevronDown
-          className={cn('h-5 w-5 shrink-0 text-muted-foreground transition-transform', isOpen && 'rotate-180')}
+          className={cn('mt-1 h-5 w-5 shrink-0 text-muted-foreground transition-transform', isOpen && 'rotate-180')}
         />
       </button>
 

@@ -117,3 +117,87 @@ export function useRunTelegramBackup() {
     onSuccess: () => qc.invalidateQueries({ queryKey: TG_KEY }),
   })
 }
+
+// ---- SMTP (e-mail) settings ----
+
+export interface MailStatus {
+  enabled: boolean
+  host: string
+  port: number
+  username: string
+  has_password: boolean
+  from: string
+  security: 'starttls' | 'tls' | 'none'
+}
+
+export interface MailInput {
+  enabled: boolean
+  host: string
+  port: number
+  username: string
+  password: string // blank = keep the stored one
+  from: string
+  security: 'starttls' | 'tls' | 'none'
+}
+
+const MAIL_KEY = ['mail']
+
+export function useMailConfig() {
+  return useQuery({ queryKey: MAIL_KEY, queryFn: () => api.get<MailStatus>('/api/mail') })
+}
+
+export function useUpdateMailConfig() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (input: MailInput) => api.put<MailStatus>('/api/mail', input),
+    onSuccess: (data) => qc.setQueryData(MAIL_KEY, data),
+  })
+}
+
+export function useTestMail() {
+  return useMutation({
+    mutationFn: (to: string) => api.post<{ ok: boolean }>('/api/mail/test', { to }),
+  })
+}
+
+// ---- E-mail auto-backup ----
+
+export interface EmailBackupStatus {
+  enabled: boolean
+  to: string
+  has_passphrase: boolean
+  interval_hours: number
+  smtp_ready: boolean
+  last_at: string
+  last_error: string
+  last_ok: boolean
+}
+
+export interface EmailBackupInput {
+  enabled: boolean
+  to: string
+  passphrase: string // blank = keep the stored one
+  interval_hours: number
+}
+
+const EMAIL_KEY = ['backup', 'email']
+
+export function useEmailBackup() {
+  return useQuery({ queryKey: EMAIL_KEY, queryFn: () => api.get<EmailBackupStatus>('/api/backup/email') })
+}
+
+export function useUpdateEmailBackup() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (input: EmailBackupInput) => api.put<EmailBackupStatus>('/api/backup/email', input),
+    onSuccess: (data) => qc.setQueryData(EMAIL_KEY, data),
+  })
+}
+
+export function useRunEmailBackup() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: () => api.post<{ ok: boolean }>('/api/backup/email/run'),
+    onSuccess: () => qc.invalidateQueries({ queryKey: EMAIL_KEY }),
+  })
+}

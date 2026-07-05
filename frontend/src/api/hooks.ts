@@ -63,11 +63,14 @@ export function useServers() {
 export function useServer(id: number) {
   return useQuery({ queryKey: qk.server(id), queryFn: () => api.get<Server>(`/api/servers/${id}`), enabled: id > 0 })
 }
-export function useServerStats(id: number) {
+export function useServerStats(id: number, enabled = true) {
   return useQuery({
     queryKey: qk.serverStats(id),
     queryFn: () => api.get<ServerStats>(`/api/servers/${id}/stats`),
-    enabled: id > 0,
+    enabled: enabled && id > 0,
+    // Each fetch is an SSH round-trip to the node; keep it fresh-ish but don't
+    // re-hit on every card mount / navigation.
+    staleTime: 30_000,
   })
 }
 export function useCreateServer() {
@@ -205,6 +208,11 @@ export function useDeleteClient() {
   return useMutation({
     mutationFn: (id: number) => api.del<void>(`/api/clients/${id}`),
     onSuccess: () => qc.invalidateQueries({ queryKey: qk.clients }),
+  })
+}
+export function useSendClientEmail(id: number) {
+  return useMutation({
+    mutationFn: () => api.post<{ ok: boolean }>(`/api/clients/${id}/email`),
   })
 }
 export function useToggleClient(id: number) {

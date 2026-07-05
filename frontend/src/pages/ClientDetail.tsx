@@ -12,6 +12,7 @@ import {
   Loader2,
   Users,
   ShieldCheck,
+  Mail,
 } from 'lucide-react'
 import { PageHeader } from '@/components/common/page-header'
 import { EmptyState } from '@/components/common/misc'
@@ -44,6 +45,7 @@ import {
   useClientLinks,
   useDeleteClient,
   useRotateToken,
+  useSendClientEmail,
   useServers,
   useSetClientInbounds,
   useToggleClient,
@@ -65,20 +67,22 @@ function EditClientDialog({
   const update = useUpdateClient(client.id)
   const [name, setName] = useState(client.name)
   const [remark, setRemark] = useState(client.remark ?? '')
+  const [email, setEmail] = useState(client.email ?? '')
 
   useEffect(() => {
     if (open) {
       setName(client.name)
       setRemark(client.remark ?? '')
+      setEmail(client.email ?? '')
     }
-  }, [open, client.name, client.remark])
+  }, [open, client.name, client.remark, client.email])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     const trimmed = name.trim()
     if (!trimmed) return
     try {
-      await update.mutateAsync({ name: trimmed, remark: remark.trim() || undefined })
+      await update.mutateAsync({ name: trimmed, remark: remark.trim() || undefined, email: email.trim() || undefined })
       toast({ title: t('clientDetail.updated') })
       onOpenChange(false)
     } catch {
@@ -112,6 +116,16 @@ function EditClientDialog({
                 value={remark}
                 placeholder={t('clientDetail.field.remarkPlaceholder')}
                 onChange={(e) => setRemark(e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-email">{t('clients.email.label')}</Label>
+              <Input
+                id="edit-email"
+                type="email"
+                value={email}
+                placeholder={t('clients.email.placeholder')}
+                onChange={(e) => setEmail(e.target.value)}
               />
             </div>
           </div>
@@ -479,9 +493,18 @@ export default function ClientDetailPage() {
   const { data: client, isLoading } = useClient(id)
   const toggle = useToggleClient(id)
   const del = useDeleteClient()
+  const sendEmail = useSendClientEmail(id)
 
   const [editOpen, setEditOpen] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
+
+  function handleSendEmail() {
+    sendEmail.mutate(undefined, {
+      onSuccess: () => toast({ title: t('clientDetail.email.sent') }),
+      onError: (e) =>
+        toast({ title: e instanceof Error ? e.message : t('clientDetail.email.failed'), variant: 'destructive' }),
+    })
+  }
 
   function handleToggle() {
     if (!client) return
@@ -563,6 +586,19 @@ export default function ClientDetailPage() {
               <>
                 <Separator orientation="vertical" className="h-4" />
                 <span className="text-sm text-muted-foreground">{client.remark}</span>
+              </>
+            )}
+            {client.email && (
+              <>
+                <Separator orientation="vertical" className="h-4" />
+                <span className="inline-flex items-center gap-1.5 text-sm text-muted-foreground">
+                  <Mail className="h-3.5 w-3.5" />
+                  {client.email}
+                </span>
+                <Button variant="outline" size="sm" onClick={handleSendEmail} disabled={sendEmail.isPending}>
+                  {sendEmail.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mail className="h-4 w-4" />}
+                  {t('clientDetail.email.send')}
+                </Button>
               </>
             )}
           </div>

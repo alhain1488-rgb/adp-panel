@@ -10,6 +10,8 @@ import {
   Trash2,
   Loader2,
   ListFilter,
+  EthernetPort,
+  Clock,
 } from 'lucide-react'
 import { PageHeader } from '@/components/common/page-header'
 import { EmptyState } from '@/components/common/misc'
@@ -20,14 +22,6 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
 import {
   Dialog,
   DialogContent,
@@ -81,9 +75,11 @@ function CreateClientDialog({
   const t = useT()
   const createClient = useCreateClient()
   const [name, setName] = useState('')
+  const [email, setEmail] = useState('')
 
   function reset() {
     setName('')
+    setEmail('')
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -91,7 +87,7 @@ function CreateClientDialog({
     const trimmed = name.trim()
     if (!trimmed) return
     try {
-      const client = await createClient.mutateAsync({ name: trimmed })
+      const client = await createClient.mutateAsync({ name: trimmed, email: email.trim() || undefined })
       toast({ title: t('clients.created.title'), description: t('clients.created.desc', { name: client.name }) })
       onOpenChange(false)
       reset()
@@ -115,16 +111,29 @@ function CreateClientDialog({
             <DialogTitle>{t('clients.new.title')}</DialogTitle>
             <DialogDescription>{t('clients.new.desc')}</DialogDescription>
           </DialogHeader>
-          <div className="space-y-2 py-4">
-            <Label htmlFor="client-name">{t('clients.col.name')}</Label>
-            <Input
-              id="client-name"
-              autoFocus
-              value={name}
-              placeholder={t('clients.new.namePlaceholder')}
-              onChange={(e) => setName(e.target.value)}
-              required
-            />
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="client-name">{t('clients.col.name')}</Label>
+              <Input
+                id="client-name"
+                autoFocus
+                value={name}
+                placeholder={t('clients.new.namePlaceholder')}
+                onChange={(e) => setName(e.target.value)}
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="client-email">{t('clients.email.label')}</Label>
+              <Input
+                id="client-email"
+                type="email"
+                value={email}
+                placeholder={t('clients.email.placeholder')}
+                onChange={(e) => setEmail(e.target.value)}
+              />
+              <p className="text-xs text-muted-foreground">{t('clients.email.createHint')}</p>
+            </div>
           </div>
           <DialogFooter>
             <Button
@@ -146,7 +155,7 @@ function CreateClientDialog({
   )
 }
 
-function ClientRow({ client }: { client: Client }) {
+function ClientCard({ client }: { client: Client }) {
   const { toast } = useToast()
   const t = useT()
   const rel = useRelTime()
@@ -156,6 +165,8 @@ function ClientRow({ client }: { client: Client }) {
   const [confirmDelete, setConfirmDelete] = useState(false)
 
   const grantCount = client.inbound_ids?.length ?? 0
+  const grantLabel =
+    grantCount === 1 ? t('clients.inbounds.one', { n: grantCount }) : t('clients.inbounds', { n: grantCount })
 
   function handleToggle() {
     toggle.mutate(!client.enabled, {
@@ -187,66 +198,78 @@ function ClientRow({ client }: { client: Client }) {
   }
 
   return (
-    <>
-      <TableRow>
-        <TableCell>
-          <Link to={`/clients/${client.id}`} className="font-medium hover:underline">
+    <Card className={cn('flex flex-col p-5', !client.enabled && 'opacity-70')}>
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <Link
+            to={`/clients/${client.id}`}
+            className="block truncate font-semibold hover:underline"
+          >
             {client.name}
           </Link>
-        </TableCell>
-        <TableCell>
-          <EnabledDot enabled={client.enabled} />
-        </TableCell>
-        <TableCell className="tabular-nums">
-          {grantCount === 1 ? t('clients.inbounds.one', { n: grantCount }) : t('clients.inbounds', { n: grantCount })}
-        </TableCell>
-        <TableCell className="max-w-[16rem] truncate text-muted-foreground">
-          {client.remark || '—'}
-        </TableCell>
-        <TableCell className="whitespace-nowrap text-muted-foreground">
+          <div className="mt-1">
+            <EnabledDot enabled={client.enabled} />
+          </div>
+        </div>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" size="icon" className="-mr-1 shrink-0" aria-label={t('clients.actions')}>
+              <MoreHorizontal className="h-4 w-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem asChild>
+              <Link to={`/clients/${client.id}`}>
+                <ExternalLink className="h-4 w-4" />
+                {t('common.open')}
+              </Link>
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={handleToggle} disabled={toggle.isPending}>
+              <Power className="h-4 w-4" />
+              {client.enabled ? t('common.disable') : t('common.enable')}
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={handleRotate} disabled={rotate.isPending}>
+              <RefreshCw className="h-4 w-4" />
+              {t('clients.rotate')}
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              className="text-destructive focus:text-destructive"
+              onClick={() => setConfirmDelete(true)}
+            >
+              <Trash2 className="h-4 w-4" />
+              {t('common.delete')}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+
+      {client.remark && (
+        <p className="mt-2 line-clamp-2 text-sm text-muted-foreground">{client.remark}</p>
+      )}
+
+      <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+        <span className="flex items-center gap-1">
+          <EthernetPort className="h-3.5 w-3.5" />
+          {grantLabel}
+        </span>
+        <span className="flex items-center gap-1">
+          <Clock className="h-3.5 w-3.5" />
           {rel(client.created_at)}
-        </TableCell>
-        <TableCell>
-          {client.subscription_url ? (
-            <CopyButton value={client.subscription_url} size="sm" label={t('clients.col.subscription')} />
-          ) : (
-            <span className="text-xs text-muted-foreground">—</span>
-          )}
-        </TableCell>
-        <TableCell className="text-right">
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" aria-label="Actions">
-                <MoreHorizontal className="h-4 w-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem asChild>
-                <Link to={`/clients/${client.id}`}>
-                  <ExternalLink className="h-4 w-4" />
-                  {t('common.open')}
-                </Link>
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={handleToggle} disabled={toggle.isPending}>
-                <Power className="h-4 w-4" />
-                {client.enabled ? t('common.disable') : t('common.enable')}
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={handleRotate} disabled={rotate.isPending}>
-                <RefreshCw className="h-4 w-4" />
-                {t('clients.rotate')}
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem
-                className="text-destructive focus:text-destructive"
-                onClick={() => setConfirmDelete(true)}
-              >
-                <Trash2 className="h-4 w-4" />
-                {t('common.delete')}
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </TableCell>
-      </TableRow>
+        </span>
+      </div>
+
+      <div className="mt-4 flex items-center gap-2 border-t pt-4">
+        <Button variant="outline" size="sm" asChild>
+          <Link to={`/clients/${client.id}`}>
+            <ExternalLink className="h-4 w-4" />
+            {t('common.open')}
+          </Link>
+        </Button>
+        {client.subscription_url && (
+          <CopyButton value={client.subscription_url} size="sm" label={t('clients.col.subscription')} />
+        )}
+      </div>
 
       <Dialog open={confirmDelete} onOpenChange={setConfirmDelete}>
         <DialogContent className="sm:max-w-md">
@@ -265,7 +288,7 @@ function ClientRow({ client }: { client: Client }) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </>
+    </Card>
   )
 }
 
@@ -351,9 +374,9 @@ export default function ClientsPage() {
       <DirectDomainsCard />
 
       {isLoading || !clients ? (
-        <div className="space-y-3">
-          {Array.from({ length: 5 }).map((_, i) => (
-            <Skeleton key={i} className="h-14" />
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <Skeleton key={i} className="h-44" />
           ))}
         </div>
       ) : clients.length === 0 ? (
@@ -369,26 +392,22 @@ export default function ClientsPage() {
           }
         />
       ) : (
-        <Card>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>{t('clients.col.name')}</TableHead>
-                <TableHead>{t('clients.col.state')}</TableHead>
-                <TableHead>{t('clients.col.access')}</TableHead>
-                <TableHead>{t('clients.col.remark')}</TableHead>
-                <TableHead>{t('clients.col.created')}</TableHead>
-                <TableHead>{t('clients.col.subscription')}</TableHead>
-                <TableHead className="w-10" />
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {clients.map((client) => (
-                <ClientRow key={client.id} client={client} />
-              ))}
-            </TableBody>
-          </Table>
-        </Card>
+        <div className="grid items-start gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {clients.map((client) => (
+            <ClientCard key={client.id} client={client} />
+          ))}
+
+          {/* Add-client card: dashed outline, mirrors the Servers page */}
+          <button
+            type="button"
+            onClick={() => setCreateOpen(true)}
+            aria-label={t('clients.add')}
+            className="flex min-h-[7.5rem] flex-col items-center justify-center gap-2 self-stretch rounded-xl border-2 border-dashed border-border text-muted-foreground transition-colors hover:border-primary/50 hover:text-primary"
+          >
+            <Plus className="h-8 w-8" />
+            <span className="text-sm font-medium">{t('clients.add')}</span>
+          </button>
+        </div>
       )}
 
       <CreateClientDialog open={createOpen} onOpenChange={setCreateOpen} />
