@@ -1284,6 +1284,8 @@ components:
           type: boolean
         remark:
           type: string
+        email:
+          type: string
         inbound_ids:
           type: array
           items:
@@ -1326,6 +1328,8 @@ components:
         name:
           type: string
         remark:
+          type: string
+        email:
           type: string
 
     ClientInboundsInput:

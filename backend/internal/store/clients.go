@@ -15,6 +15,7 @@ type Client struct {
 	SubscriptionToken string
 	Enabled           bool
 	Remark            string
+	Email             string
 	CreatedAt         string
 	UpdatedAt         string
 }
@@ -27,6 +28,7 @@ type ClientParams struct {
 	SubscriptionToken string
 	Enabled           bool
 	Remark            string
+	Email             string
 }
 
 // ClientGrant is an inbound granted to a client, with server context, as shown
@@ -51,14 +53,14 @@ type InboundWithServer struct {
 }
 
 const clientSelect = `
-	SELECT id, name, uuid, password, subscription_token, enabled, remark, created_at, updated_at
+	SELECT id, name, uuid, password, subscription_token, enabled, remark, created_at, updated_at, email
 	FROM clients`
 
 func scanClient(sc interface{ Scan(...any) error }) (*Client, error) {
 	var c Client
 	var enabled int64
 	err := sc.Scan(&c.ID, &c.Name, &c.UUID, &c.Password, &c.SubscriptionToken,
-		&enabled, &c.Remark, &c.CreatedAt, &c.UpdatedAt)
+		&enabled, &c.Remark, &c.CreatedAt, &c.UpdatedAt, &c.Email)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrNotFound
@@ -101,9 +103,9 @@ func (s *Store) GetClientByToken(ctx context.Context, token string) (*Client, er
 func (s *Store) CreateClient(ctx context.Context, p ClientParams) (*Client, error) {
 	now := nowRFC3339()
 	res, err := s.db.ExecContext(ctx, `
-		INSERT INTO clients (name, uuid, password, subscription_token, enabled, remark, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		p.Name, p.UUID, p.Password, p.SubscriptionToken, boolToInt(p.Enabled), p.Remark, now, now)
+		INSERT INTO clients (name, uuid, password, subscription_token, enabled, remark, email, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		p.Name, p.UUID, p.Password, p.SubscriptionToken, boolToInt(p.Enabled), p.Remark, p.Email, now, now)
 	if err != nil {
 		return nil, err
 	}
@@ -114,11 +116,11 @@ func (s *Store) CreateClient(ctx context.Context, p ClientParams) (*Client, erro
 	return s.GetClient(ctx, id)
 }
 
-// UpdateClient changes the name and remark.
-func (s *Store) UpdateClient(ctx context.Context, id int64, name, remark string) (*Client, error) {
+// UpdateClient changes the name, remark and contact e-mail.
+func (s *Store) UpdateClient(ctx context.Context, id int64, name, remark, email string) (*Client, error) {
 	if _, err := s.db.ExecContext(ctx,
-		"UPDATE clients SET name=?, remark=?, updated_at=? WHERE id=?",
-		name, remark, nowRFC3339(), id); err != nil {
+		"UPDATE clients SET name=?, remark=?, email=?, updated_at=? WHERE id=?",
+		name, remark, email, nowRFC3339(), id); err != nil {
 		return nil, err
 	}
 	return s.GetClient(ctx, id)
@@ -266,7 +268,7 @@ func (s *Store) ListActiveClientInbounds(ctx context.Context, clientID int64) ([
 func (s *Store) ListInboundGrantedClients(ctx context.Context, inboundID int64) ([]Client, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT c.id, c.name, c.uuid, c.password, c.subscription_token, c.enabled, c.remark,
-		       c.created_at, c.updated_at
+		       c.created_at, c.updated_at, c.email
 		FROM client_inbounds ci
 		JOIN clients c ON c.id = ci.client_id
 		WHERE ci.inbound_id = ? AND ci.enabled = 1 AND c.enabled = 1

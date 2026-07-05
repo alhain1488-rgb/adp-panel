@@ -16,6 +16,7 @@ import (
 type backupHandler struct {
 	svc      *backup.Service
 	telegram *backup.Telegram
+	email    *backup.Email
 	store    *store.Store
 	logger   *slog.Logger
 	restart  func() // triggers a process restart to apply a staged restore
@@ -167,5 +168,54 @@ func (h *backupHandler) telegramRun(w http.ResponseWriter, r *http.Request) {
 	}
 	adminID, _ := auth.AdminIDFrom(r.Context())
 	recordAudit(r.Context(), h.store, r, adminID, "backup.telegram.run", "backup", 0, "")
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+// emailGet returns the current e-mail auto-backup config (no secrets).
+func (h *backupHandler) emailGet(w http.ResponseWriter, r *http.Request) {
+	status, err := h.email.Status(r.Context())
+	if err != nil {
+		h.logger.Error("read email backup config failed", "err", err)
+		writeError(w, http.StatusInternalServerError, "could not read config")
+		return
+	}
+	writeJSON(w, http.StatusOK, status)
+}
+
+// emailPut updates the e-mail auto-backup config.
+func (h *backupHandler) emailPut(w http.ResponseWriter, r *http.Request) {
+	var in backup.EmailInput
+	if err := decode(r, &in); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if in.Passphrase != "" && len([]rune(in.Passphrase)) < minPassphrase {
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("passphrase must be at least %d characters", minPassphrase))
+		return
+	}
+	if err := h.email.SetConfig(r.Context(), in); err != nil {
+		h.logger.Error("save email backup config failed", "err", err)
+		writeError(w, http.StatusInternalServerError, "could not save config")
+		return
+	}
+	adminID, _ := auth.AdminIDFrom(r.Context())
+	recordAudit(r.Context(), h.store, r, adminID, "backup.email.config", "backup", 0, "")
+
+	status, err := h.email.Status(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "could not read config")
+		return
+	}
+	writeJSON(w, http.StatusOK, status)
+}
+
+// emailRun e-mails a backup immediately ("Backup now").
+func (h *backupHandler) emailRun(w http.ResponseWriter, r *http.Request) {
+	if err := h.email.RunNow(r.Context()); err != nil {
+		writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	adminID, _ := auth.AdminIDFrom(r.Context())
+	recordAudit(r.Context(), h.store, r, adminID, "backup.email.run", "backup", 0, "")
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }

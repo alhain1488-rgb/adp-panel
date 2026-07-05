@@ -61,6 +61,7 @@ func (s *Service) WGKeypair(ctx context.Context, clientID int64) (priv, pub stri
 type Input struct {
 	Name   string
 	Remark string
+	Email  string
 }
 
 // Link is a ready-to-use connection URI for one inbound.
@@ -117,6 +118,7 @@ func (s *Service) Create(ctx context.Context, in Input) (*store.Client, error) {
 		SubscriptionToken: token,
 		Enabled:           true,
 		Remark:            in.Remark,
+		Email:             in.Email,
 	})
 }
 
@@ -132,7 +134,7 @@ func (s *Service) Update(ctx context.Context, id int64, in Input) (*store.Client
 	if _, err := s.store.GetClient(ctx, id); err != nil {
 		return nil, err
 	}
-	return s.store.UpdateClient(ctx, id, in.Name, in.Remark)
+	return s.store.UpdateClient(ctx, id, in.Name, in.Remark, in.Email)
 }
 
 // SetEnabled toggles a client on/off.

@@ -16,6 +16,7 @@ import (
 	"github.com/adp/panel/internal/backup"
 	"github.com/adp/panel/internal/clients"
 	"github.com/adp/panel/internal/inbounds"
+	"github.com/adp/panel/internal/mail"
 	"github.com/adp/panel/internal/servers"
 	"github.com/adp/panel/internal/store"
 	"github.com/adp/panel/internal/subscription"
@@ -34,6 +35,8 @@ type Deps struct {
 	Sync         *syncpkg.Service
 	Backup       *backup.Service
 	Telegram     *backup.Telegram
+	EmailBackup  *backup.Email
+	Mail         *mail.Mailer
 	Logger       *slog.Logger
 	Version      string
 	Domain       string
@@ -100,7 +103,7 @@ func Router(d Deps) http.Handler {
 		r.Put("/api/settings", seth.update)
 
 		if d.Backup != nil {
-			bh := &backupHandler{svc: d.Backup, telegram: d.Telegram, store: d.Store, logger: d.Logger, restart: d.Restart}
+			bh := &backupHandler{svc: d.Backup, telegram: d.Telegram, email: d.EmailBackup, store: d.Store, logger: d.Logger, restart: d.Restart}
 			r.Post("/api/backup/export", bh.export)
 			r.Post("/api/backup/import", bh.importBackup)
 			if d.Telegram != nil {
@@ -108,6 +111,18 @@ func Router(d Deps) http.Handler {
 				r.Put("/api/backup/telegram", bh.telegramPut)
 				r.Post("/api/backup/telegram/run", bh.telegramRun)
 			}
+			if d.EmailBackup != nil {
+				r.Get("/api/backup/email", bh.emailGet)
+				r.Put("/api/backup/email", bh.emailPut)
+				r.Post("/api/backup/email/run", bh.emailRun)
+			}
+		}
+
+		if d.Mail != nil {
+			mh := &mailHandler{mailer: d.Mail, store: d.Store, logger: d.Logger}
+			r.Get("/api/mail", mh.get)
+			r.Put("/api/mail", mh.put)
+			r.Post("/api/mail/test", mh.test)
 		}
 
 		ih := &inboundsHandler{svc: d.Inbounds, servers: d.Servers, store: d.Store, sync: d.Sync}
@@ -135,7 +150,7 @@ func Router(d Deps) http.Handler {
 			r.Delete("/", ih.del)
 		})
 
-		ch := &clientsHandler{svc: d.Clients, store: d.Store, subBase: d.SubBaseURL, sync: d.Sync}
+		ch := &clientsHandler{svc: d.Clients, store: d.Store, subBase: d.SubBaseURL, sync: d.Sync, mailer: d.Mail}
 		r.Route("/api/clients", func(r chi.Router) {
 			r.Get("/", ch.list)
 			r.Post("/", ch.create)
@@ -151,6 +166,7 @@ func Router(d Deps) http.Handler {
 				r.Get("/amneziawg", ch.amneziawg)
 				r.Get("/qrcode", ch.qrcode)
 				r.Get("/config", ch.config)
+				r.Post("/email", ch.sendEmail)
 			})
 		})
 	})

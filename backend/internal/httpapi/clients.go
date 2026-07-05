@@ -11,6 +11,7 @@ import (
 
 	"github.com/adp/panel/internal/auth"
 	"github.com/adp/panel/internal/clients"
+	"github.com/adp/panel/internal/mail"
 	"github.com/adp/panel/internal/store"
 	syncpkg "github.com/adp/panel/internal/sync"
 )
@@ -20,6 +21,64 @@ type clientsHandler struct {
 	store   *store.Store
 	subBase string
 	sync    *syncpkg.Service
+	mailer  *mail.Mailer
+}
+
+// emailSubject / emailBody render the "here is your VPN subscription" message
+// sent to a client's contact address.
+func emailSubject(name string) string {
+	return "Your VPN subscription" + func() string {
+		if name != "" {
+			return " — " + name
+		}
+		return ""
+	}()
+}
+
+func (h *clientsHandler) emailBody(c store.Client) string {
+	url := h.subURL(c.SubscriptionToken)
+	var b strings.Builder
+	if c.Name != "" {
+		b.WriteString("Hi " + c.Name + ",\n\n")
+	}
+	b.WriteString("Here is your personal VPN subscription link. Add it to your client app ")
+	b.WriteString("(sing-box, Hiddify, v2rayN, Streisand, etc.) to receive all your configs automatically:\n\n")
+	b.WriteString(url + "\n\n")
+	b.WriteString("Keep this link private — anyone with it can use your access. ")
+	b.WriteString("If it leaks, ask the operator to rotate your subscription token.\n")
+	return b.String()
+}
+
+// sendEmail e-mails the client their subscription link on demand.
+func (h *clientsHandler) sendEmail(w http.ResponseWriter, r *http.Request) {
+	id, ok := idParam(r)
+	if !ok {
+		writeError(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+	c, err := h.svc.Get(r.Context(), id)
+	if errors.Is(err, store.ErrNotFound) {
+		writeError(w, http.StatusNotFound, "client not found")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to load client")
+		return
+	}
+	if c.Email == "" {
+		writeError(w, http.StatusBadRequest, "this client has no e-mail address")
+		return
+	}
+	if h.mailer == nil || !h.mailer.Configured(r.Context()) {
+		writeError(w, http.StatusBadRequest, "SMTP is not configured; set it up in Settings")
+		return
+	}
+	if err := h.mailer.Send(r.Context(), []string{c.Email}, emailSubject(c.Name), h.emailBody(*c), nil); err != nil {
+		writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	h.audit(r, "client.email", c.ID, "{}")
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
 // autoSync re-pushes config to all installed nodes after a client-level change
@@ -41,6 +100,7 @@ type clientDTO struct {
 	SubscriptionURL   string           `json:"subscription_url,omitempty"`
 	Enabled           bool             `json:"enabled"`
 	Remark            string           `json:"remark,omitempty"`
+	Email             string           `json:"email,omitempty"`
 	InboundIDs        []int64          `json:"inbound_ids"`
 	Grants            []clientGrantDTO `json:"grants,omitempty"`
 	CreatedAt         string           `json:"created_at,omitempty"`
@@ -67,6 +127,7 @@ type clientLinkDTO struct {
 type clientInput struct {
 	Name   string `json:"name"`
 	Remark string `json:"remark"`
+	Email  string `json:"email"`
 }
 
 type clientInboundsInput struct {
@@ -89,7 +150,7 @@ func (h *clientsHandler) toDTO(ctx context.Context, c *store.Client, withGrants 
 	dto := clientDTO{
 		ID: c.ID, Name: c.Name, UUID: c.UUID, Password: c.Password,
 		SubscriptionToken: c.SubscriptionToken, SubscriptionURL: h.subURL(c.SubscriptionToken),
-		Enabled: c.Enabled, Remark: c.Remark, InboundIDs: ids,
+		Enabled: c.Enabled, Remark: c.Remark, Email: c.Email, InboundIDs: ids,
 		CreatedAt: c.CreatedAt, UpdatedAt: c.UpdatedAt,
 	}
 	if withGrants {
@@ -135,12 +196,19 @@ func (h *clientsHandler) create(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "name is required")
 		return
 	}
-	c, err := h.svc.Create(r.Context(), clients.Input{Name: in.Name, Remark: in.Remark})
+	c, err := h.svc.Create(r.Context(), clients.Input{Name: in.Name, Remark: in.Remark, Email: strings.TrimSpace(in.Email)})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to create client")
 		return
 	}
 	h.audit(r, "client.create", c.ID, `{"name":`+strconv.Quote(c.Name)+`}`)
+	// If a contact e-mail was provided and SMTP is set up, send the subscription.
+	if c.Email != "" && h.mailer != nil && h.mailer.Configured(r.Context()) {
+		go func(cl store.Client) {
+			_ = h.mailer.Send(context.Background(), []string{cl.Email},
+				emailSubject(cl.Name), h.emailBody(cl), nil)
+		}(*c)
+	}
 	writeJSON(w, http.StatusCreated, h.toDTO(r.Context(), c, false))
 }
 
@@ -163,7 +231,7 @@ func (h *clientsHandler) update(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	c, err := h.svc.Update(r.Context(), id, clients.Input{Name: in.Name, Remark: in.Remark})
+	c, err := h.svc.Update(r.Context(), id, clients.Input{Name: in.Name, Remark: in.Remark, Email: strings.TrimSpace(in.Email)})
 	if errors.Is(err, store.ErrNotFound) {
 		writeError(w, http.StatusNotFound, "client not found")
 		return

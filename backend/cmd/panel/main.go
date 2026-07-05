@@ -19,6 +19,7 @@ import (
 	"github.com/adp/panel/internal/httpapi"
 	"github.com/adp/panel/internal/inbounds"
 	"github.com/adp/panel/internal/logging"
+	"github.com/adp/panel/internal/mail"
 	"github.com/adp/panel/internal/servers"
 	"github.com/adp/panel/internal/ssh"
 	"github.com/adp/panel/internal/store"
@@ -27,7 +28,7 @@ import (
 )
 
 // version is the backend build version; kept in sync with the frontend APP_VERSION.
-const version = "0.9.1.2"
+const version = "0.9.2.0"
 
 func main() {
 	logger := logging.New()
@@ -61,6 +62,8 @@ func main() {
 	syncSvc := syncpkg.NewService(st, serversSvc, clientsSvc)
 	backupSvc := backup.NewService(database, cfg.DBPath, cfg.EncryptionKey, version)
 	telegramSvc := backup.NewTelegram(backupSvc, st, cipher, logger)
+	mailer := mail.NewMailer(st, cipher)
+	emailBackupSvc := backup.NewEmail(backupSvc, mailer, st, cipher, logger)
 
 	seeded, err := authSvc.SeedAdmin(context.Background(), cfg.AdminUsername, cfg.AdminPassword)
 	if err != nil {
@@ -82,6 +85,8 @@ func main() {
 		Sync:         syncSvc,
 		Backup:       backupSvc,
 		Telegram:     telegramSvc,
+		EmailBackup:  emailBackupSvc,
+		Mail:         mailer,
 		Logger:       logger,
 		Version:      version,
 		Domain:       cfg.Domain,
@@ -107,8 +112,9 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	// Scheduled Telegram backups run until shutdown.
+	// Scheduled backups run until shutdown.
 	go telegramSvc.RunScheduler(ctx)
+	go emailBackupSvc.RunScheduler(ctx)
 
 	select {
 	case err := <-errCh:
