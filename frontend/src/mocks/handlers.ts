@@ -723,4 +723,34 @@ export const handlers = [
     if (tgOK) res.telegram_sent = total
     return json(res)
   }),
+
+  // ---- System (host metrics for the panel machine) ----
+  http.get('/api/system', ({ request }) => {
+    if (!requireAuth(request)) return unauthorized()
+    const memTotal = 957 * 1024 * 1024
+    const memUsed = Math.round(memTotal * (0.28 + Math.random() * 0.05))
+    const diskTotal = Math.round(9.4 * 1024 * 1024 * 1024)
+    const diskUsed = Math.round(diskTotal * 0.59)
+    const swapTotal = 2 * 1024 * 1024 * 1024
+    const swapUsed = Math.round(swapTotal * 0.05)
+    return json({
+      kernel: '6.1.0-18-amd64',
+      arch: 'amd64',
+      cpu_cores: 1,
+      load1: Number((0.03 + Math.random() * 0.1).toFixed(2)),
+      load5: 0.07,
+      load15: 0.12,
+      mem_total_bytes: memTotal,
+      mem_used_bytes: memUsed,
+      mem_available_bytes: memTotal - memUsed,
+      swap_total_bytes: swapTotal,
+      swap_used_bytes: swapUsed,
+      disk_total_bytes: diskTotal,
+      disk_used_bytes: diskUsed,
+      disk_free_bytes: diskTotal - diskUsed,
+      uptime_seconds: 356421,
+      panel_version: '0.9.7.0',
+      domain: 'panel.example.com',
+    })
+  }),
 ]

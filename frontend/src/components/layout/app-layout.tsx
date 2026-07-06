@@ -1,5 +1,5 @@
 import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom'
-import { Server, Users, Settings as SettingsIcon, ScrollText, LogOut } from 'lucide-react'
+import { Server, Users, Settings as SettingsIcon, ScrollText, LogOut, Activity } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { ThemeToggle } from './theme-toggle'
@@ -14,6 +14,7 @@ const bottomNav = [
   { to: '/clients', labelKey: 'nav.clients', icon: Users, end: false },
   { to: '/logs', labelKey: 'nav.logs', icon: ScrollText, end: false },
   { to: '/settings', labelKey: 'nav.settings', icon: SettingsIcon, end: false },
+  { to: '/system', labelKey: 'nav.system', icon: Activity, end: false },
 ]
 
 export function AppLayout() {

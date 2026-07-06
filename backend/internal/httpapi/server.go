@@ -98,6 +98,9 @@ func Router(d Deps) http.Handler {
 
 		r.Get("/api/logs", ah.listLogs)
 
+		syh := &systemHandler{version: d.Version, domain: d.Domain}
+		r.Get("/api/system", syh.get)
+
 		seth := &settingsHandler{store: d.Store, domain: d.Domain, subBaseURL: d.SubBaseURL, defaultTheme: d.Theme}
 		r.Get("/api/settings", seth.get)
 		r.Put("/api/settings", seth.update)

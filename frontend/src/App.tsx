@@ -8,6 +8,7 @@ import ClientsPage from './pages/Clients'
 import ClientDetailPage from './pages/ClientDetail'
 import SettingsPage from './pages/Settings'
 import LogsPage from './pages/Logs'
+import SystemPage from './pages/System'
 
 function Protected({ children }: { children: React.ReactNode }) {
   const { authenticated, loading } = useAuth()
@@ -37,6 +38,7 @@ export default function App() {
           <Route path="/clients/:id" element={<ClientDetailPage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/logs" element={<LogsPage />} />
+          <Route path="/system" element={<SystemPage />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
