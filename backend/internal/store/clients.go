@@ -16,6 +16,9 @@ type Client struct {
 	Enabled           bool
 	Remark            string
 	Email             string
+	TelegramChatID    string // numeric chat id once the client links their Telegram
+	TelegramUsername  string // @handle, display only
+	TelegramLinkToken string // deep-link payload that binds a chat to this client
 	CreatedAt         string
 	UpdatedAt         string
 }
@@ -29,6 +32,7 @@ type ClientParams struct {
 	Enabled           bool
 	Remark            string
 	Email             string
+	TelegramLinkToken string
 }
 
 // ClientGrant is an inbound granted to a client, with server context, as shown
@@ -53,14 +57,16 @@ type InboundWithServer struct {
 }
 
 const clientSelect = `
-	SELECT id, name, uuid, password, subscription_token, enabled, remark, created_at, updated_at, email
+	SELECT id, name, uuid, password, subscription_token, enabled, remark, created_at, updated_at, email,
+	       tg_chat_id, tg_username, tg_link_token
 	FROM clients`
 
 func scanClient(sc interface{ Scan(...any) error }) (*Client, error) {
 	var c Client
 	var enabled int64
 	err := sc.Scan(&c.ID, &c.Name, &c.UUID, &c.Password, &c.SubscriptionToken,
-		&enabled, &c.Remark, &c.CreatedAt, &c.UpdatedAt, &c.Email)
+		&enabled, &c.Remark, &c.CreatedAt, &c.UpdatedAt, &c.Email,
+		&c.TelegramChatID, &c.TelegramUsername, &c.TelegramLinkToken)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrNotFound
@@ -103,9 +109,9 @@ func (s *Store) GetClientByToken(ctx context.Context, token string) (*Client, er
 func (s *Store) CreateClient(ctx context.Context, p ClientParams) (*Client, error) {
 	now := nowRFC3339()
 	res, err := s.db.ExecContext(ctx, `
-		INSERT INTO clients (name, uuid, password, subscription_token, enabled, remark, email, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		p.Name, p.UUID, p.Password, p.SubscriptionToken, boolToInt(p.Enabled), p.Remark, p.Email, now, now)
+		INSERT INTO clients (name, uuid, password, subscription_token, enabled, remark, email, tg_link_token, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		p.Name, p.UUID, p.Password, p.SubscriptionToken, boolToInt(p.Enabled), p.Remark, p.Email, p.TelegramLinkToken, now, now)
 	if err != nil {
 		return nil, err
 	}
@@ -122,6 +128,52 @@ func (s *Store) UpdateClient(ctx context.Context, id int64, name, remark, email 
 		"UPDATE clients SET name=?, remark=?, email=?, updated_at=? WHERE id=?",
 		name, remark, email, nowRFC3339(), id); err != nil {
 		return nil, err
+	}
+	return s.GetClient(ctx, id)
+}
+
+// SetClientTelegramLinkToken stores the deep-link token that binds a Telegram
+// chat to this client.
+func (s *Store) SetClientTelegramLinkToken(ctx context.Context, id int64, token string) error {
+	res, err := s.db.ExecContext(ctx,
+		"UPDATE clients SET tg_link_token=?, updated_at=? WHERE id=?", token, nowRFC3339(), id)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// LinkClientTelegram binds a Telegram chat (and optional @username) to the client
+// that owns linkToken, returning the updated client. An empty token never matches
+// so clients that haven't generated one can't be hijacked by a bare /start.
+func (s *Store) LinkClientTelegram(ctx context.Context, linkToken, chatID, username string) (*Client, error) {
+	if linkToken == "" {
+		return nil, ErrNotFound
+	}
+	c, err := scanClient(s.db.QueryRowContext(ctx, clientSelect+" WHERE tg_link_token = ?", linkToken))
+	if err != nil {
+		return nil, err
+	}
+	if _, err := s.db.ExecContext(ctx,
+		"UPDATE clients SET tg_chat_id=?, tg_username=?, updated_at=? WHERE id=?",
+		chatID, username, nowRFC3339(), c.ID); err != nil {
+		return nil, err
+	}
+	return s.GetClient(ctx, c.ID)
+}
+
+// ClearClientTelegram unlinks a client's Telegram chat.
+func (s *Store) ClearClientTelegram(ctx context.Context, id int64) (*Client, error) {
+	res, err := s.db.ExecContext(ctx,
+		"UPDATE clients SET tg_chat_id='', tg_username='', updated_at=? WHERE id=?", nowRFC3339(), id)
+	if err != nil {
+		return nil, err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return nil, ErrNotFound
 	}
 	return s.GetClient(ctx, id)
 }
@@ -268,7 +320,7 @@ func (s *Store) ListActiveClientInbounds(ctx context.Context, clientID int64) ([
 func (s *Store) ListInboundGrantedClients(ctx context.Context, inboundID int64) ([]Client, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT c.id, c.name, c.uuid, c.password, c.subscription_token, c.enabled, c.remark,
-		       c.created_at, c.updated_at, c.email
+		       c.created_at, c.updated_at, c.email, c.tg_chat_id, c.tg_username, c.tg_link_token
 		FROM client_inbounds ci
 		JOIN clients c ON c.id = ci.client_id
 		WHERE ci.inbound_id = ? AND ci.enabled = 1 AND c.enabled = 1

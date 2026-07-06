@@ -10,8 +10,10 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/google/uuid"
+	skipqr "github.com/skip2/go-qrcode"
 
 	"github.com/adp/panel/internal/amneziawg"
 	"github.com/adp/panel/internal/protocols"
@@ -111,6 +113,10 @@ func (s *Service) Create(ctx context.Context, in Input) (*store.Client, error) {
 	if err != nil {
 		return nil, err
 	}
+	tgToken, err := randToken(12)
+	if err != nil {
+		return nil, err
+	}
 	return s.store.CreateClient(ctx, store.ClientParams{
 		Name:              in.Name,
 		UUID:              id,
@@ -119,7 +125,58 @@ func (s *Service) Create(ctx context.Context, in Input) (*store.Client, error) {
 		Enabled:           true,
 		Remark:            in.Remark,
 		Email:             in.Email,
+		TelegramLinkToken: tgToken,
 	})
+}
+
+// EnsureTelegramLinkToken returns the client's stable Telegram deep-link token,
+// generating and persisting one on first use (older clients predate the field).
+func (s *Service) EnsureTelegramLinkToken(ctx context.Context, id int64) (string, error) {
+	c, err := s.store.GetClient(ctx, id)
+	if err != nil {
+		return "", err
+	}
+	if c.TelegramLinkToken != "" {
+		return c.TelegramLinkToken, nil
+	}
+	tok, err := randToken(12)
+	if err != nil {
+		return "", err
+	}
+	if err := s.store.SetClientTelegramLinkToken(ctx, id, tok); err != nil {
+		return "", err
+	}
+	return tok, nil
+}
+
+// UnlinkTelegram clears the client's linked Telegram chat.
+func (s *Service) UnlinkTelegram(ctx context.Context, id int64) (*store.Client, error) {
+	return s.store.ClearClientTelegram(ctx, id)
+}
+
+// SubscriptionConfig returns the client's subscription URL and a QR PNG for it,
+// used to deliver the config over Telegram or e-mail.
+func (s *Service) SubscriptionConfig(ctx context.Context, id int64, subBase string) (string, []byte, error) {
+	c, err := s.store.GetClient(ctx, id)
+	if err != nil {
+		return "", nil, err
+	}
+	u := subscriptionURL(subBase, c.SubscriptionToken)
+	if u == "" {
+		return "", nil, fmt.Errorf("subscription base URL is not configured")
+	}
+	png, err := skipqr.Encode(u, skipqr.Medium, 512)
+	if err != nil {
+		return "", nil, err
+	}
+	return u, png, nil
+}
+
+func subscriptionURL(base, token string) string {
+	if base == "" || token == "" {
+		return ""
+	}
+	return strings.TrimRight(base, "/") + "/sub/" + token
 }
 
 // Get / List / Delete delegate to the store.

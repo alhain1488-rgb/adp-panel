@@ -230,6 +230,36 @@ export function useSendConfigs() {
     mutationFn: () => api.post<SendConfigsResult>('/api/clients/send-configs'),
   })
 }
+export interface ClientTelegramLink {
+  link: string
+  bot_username: string
+}
+// useClientTelegramLink fetches the client's personal Telegram deep link. It
+// errors (retry disabled) when the bot isn't configured — the UI treats that as
+// "not available yet" rather than a hard failure.
+export function useClientTelegramLink(id: number) {
+  return useQuery({
+    queryKey: [...qk.client(id), 'telegram-link'],
+    queryFn: () => api.get<ClientTelegramLink>(`/api/clients/${id}/telegram-link`),
+    enabled: id > 0,
+    retry: false,
+  })
+}
+export function useSendClientTelegram(id: number) {
+  return useMutation({
+    mutationFn: () => api.post<{ ok: boolean }>(`/api/clients/${id}/telegram-config`),
+  })
+}
+export function useUnlinkClientTelegram(id: number) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: () => api.post<Client>(`/api/clients/${id}/telegram-unlink`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: qk.clients })
+      qc.invalidateQueries({ queryKey: qk.client(id) })
+    },
+  })
+}
 export function useToggleClient(id: number) {
   const qc = useQueryClient()
   return useMutation({

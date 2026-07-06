@@ -681,6 +681,33 @@ export const handlers = [
     }
     return json({ ok: true })
   }),
+
+  // ---- Client Telegram delivery ----
+  http.get('/api/clients/:id/telegram-link', ({ request, params }) => {
+    if (!requireAuth(request)) return unauthorized()
+    const c = clients.find((x) => x.id === Number(params.id))
+    if (!c) return notFound()
+    // The mock always exposes a demo bot so the link UI is reviewable without setup.
+    return json({ link: `https://t.me/adp_demo_bot?start=lnk${c.id}`, bot_username: 'adp_demo_bot' })
+  }),
+  http.post('/api/clients/:id/telegram-config', ({ request, params }) => {
+    if (!requireAuth(request)) return unauthorized()
+    const c = clients.find((x) => x.id === Number(params.id))
+    if (!c) return notFound()
+    if (!c.telegram_linked) {
+      return json({ error: "this client hasn't linked their Telegram yet" }, { status: 400 })
+    }
+    return json({ ok: true })
+  }),
+  http.post('/api/clients/:id/telegram-unlink', ({ request, params }) => {
+    if (!requireAuth(request)) return unauthorized()
+    const c = clients.find((x) => x.id === Number(params.id))
+    if (!c) return notFound()
+    c.telegram_linked = false
+    c.telegram_username = ''
+    c.updated_at = new Date().toISOString()
+    return json(c)
+  }),
   http.post('/api/clients/send-configs', ({ request }) => {
     if (!requireAuth(request)) return unauthorized()
     const tgOK = telegramBackup.has_token && !!telegramBackup.chat_id

@@ -79,6 +79,48 @@ func TestClient_CRUDAndToggle(t *testing.T) {
 	}
 }
 
+func TestClient_TelegramLinking(t *testing.T) {
+	st, ctx := newStore(t)
+	c, err := st.CreateClient(ctx, ClientParams{
+		Name: "carol", UUID: "u", Password: "p", SubscriptionToken: "tk", Enabled: true,
+		TelegramLinkToken: "tok-abc",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.TelegramLinkToken != "tok-abc" || c.TelegramChatID != "" {
+		t.Fatalf("fresh client tg = %+v", c)
+	}
+
+	// A bare/empty token must never match a client (guards against /start with no payload).
+	if _, err := st.LinkClientTelegram(ctx, "", "123", "eve"); err != ErrNotFound {
+		t.Fatalf("empty token linked: %v", err)
+	}
+	if _, err := st.LinkClientTelegram(ctx, "does-not-exist", "123", "eve"); err != ErrNotFound {
+		t.Fatalf("unknown token linked: %v", err)
+	}
+
+	linked, err := st.LinkClientTelegram(ctx, "tok-abc", "555001", "carol_tg")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if linked.TelegramChatID != "555001" || linked.TelegramUsername != "carol_tg" {
+		t.Fatalf("linked = %+v", linked)
+	}
+
+	cleared, err := st.ClearClientTelegram(ctx, c.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cleared.TelegramChatID != "" || cleared.TelegramUsername != "" {
+		t.Fatalf("cleared = %+v", cleared)
+	}
+	// The link token survives an unlink so the same deep link keeps working.
+	if cleared.TelegramLinkToken != "tok-abc" {
+		t.Fatalf("link token lost on unlink: %q", cleared.TelegramLinkToken)
+	}
+}
+
 func TestClient_GrantsAndActiveInbounds(t *testing.T) {
 	st, ctx := newStore(t)
 	_, in1, in2 := seedServerWithInbounds(t, st, ctx)

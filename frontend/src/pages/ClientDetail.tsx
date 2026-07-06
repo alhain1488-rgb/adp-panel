@@ -13,6 +13,7 @@ import {
   Users,
   ShieldCheck,
   Mail,
+  Send,
 } from 'lucide-react'
 import { PageHeader } from '@/components/common/page-header'
 import { EmptyState } from '@/components/common/misc'
@@ -43,12 +44,15 @@ import {
   useClient,
   useClientAmneziaWG,
   useClientLinks,
+  useClientTelegramLink,
   useDeleteClient,
   useRotateToken,
   useSendClientEmail,
+  useSendClientTelegram,
   useServers,
   useSetClientInbounds,
   useToggleClient,
+  useUnlinkClientTelegram,
   useUpdateClient,
 } from '@/api/hooks'
 import type { Client, ClientLink } from '@/api/types'
@@ -259,6 +263,88 @@ function AmneziaWGSection({ clientId, enabled }: { clientId: number; enabled: bo
   )
 }
 
+// TelegramSection lets the operator deliver the client's subscription straight to
+// the client's Telegram. Telegram bots can't message a user first, so the client
+// must open their personal deep link and press Start once; after that the panel
+// can push the config to them (and does so automatically on first link).
+function TelegramSection({ client }: { client: Client }) {
+  const t = useT()
+  const { toast } = useToast()
+  const linkQ = useClientTelegramLink(client.id)
+  const sendTg = useSendClientTelegram(client.id)
+  const unlink = useUnlinkClientTelegram(client.id)
+  const linked = client.telegram_linked ?? false
+
+  function handleSend() {
+    sendTg.mutate(undefined, {
+      onSuccess: () => toast({ title: t('clientDetail.telegram.sent') }),
+      onError: (e) =>
+        toast({
+          title: e instanceof Error ? e.message : t('clientDetail.telegram.sendFailed'),
+          variant: 'destructive',
+        }),
+    })
+  }
+
+  function handleUnlink() {
+    unlink.mutate(undefined, {
+      onSuccess: () => toast({ title: t('clientDetail.telegram.unlinked') }),
+      onError: () => toast({ title: t('clientDetail.telegram.unlinkFailed'), variant: 'destructive' }),
+    })
+  }
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="flex items-center gap-2 text-base">
+          <Send className="h-4 w-4" />
+          {t('clientDetail.telegram.title')}
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {linkQ.isError ? (
+          <p className="text-sm text-muted-foreground">{t('clientDetail.telegram.notConfigured')}</p>
+        ) : (
+          <>
+            {linked ? (
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge variant="success" className="gap-1.5">
+                  <Send className="h-3 w-3" />
+                  {client.telegram_username ? `@${client.telegram_username}` : t('clientDetail.telegram.linked')}
+                </Badge>
+                <Button size="sm" onClick={handleSend} disabled={sendTg.isPending}>
+                  {sendTg.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                  {t('clientDetail.telegram.send')}
+                </Button>
+                <Button size="sm" variant="ghost" onClick={handleUnlink} disabled={unlink.isPending}>
+                  {t('clientDetail.telegram.unlink')}
+                </Button>
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">{t('clientDetail.telegram.notLinked')}</p>
+            )}
+
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">{t('clientDetail.telegram.inviteLabel')}</Label>
+              <div className="flex gap-2">
+                <Input
+                  readOnly
+                  value={linkQ.data?.link ?? ''}
+                  placeholder={linkQ.isLoading ? '…' : ''}
+                  className="font-mono text-xs"
+                  onFocus={(e) => e.currentTarget.select()}
+                />
+                <CopyButton value={linkQ.data?.link ?? ''} />
+              </div>
+              <p className="text-xs text-muted-foreground">{t('clientDetail.telegram.inviteHint')}</p>
+            </div>
+          </>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
 function ConnectionTab({ client }: { client: Client }) {
   const { toast } = useToast()
   const t = useT()
@@ -329,6 +415,8 @@ function ConnectionTab({ client }: { client: Client }) {
           </div>
         </CardContent>
       </Card>
+
+      <TelegramSection client={client} />
 
       <div>
         <h3 className="mb-3 text-sm font-medium">{t('clientDetail.perInboundLinks')}</h3>

@@ -1957,6 +1957,10 @@ export interface components {
             enabled: boolean;
             remark?: string;
             email?: string;
+            /** @description Whether the client has linked their Telegram chat via the deep link. */
+            telegram_linked?: boolean;
+            /** @description The client's Telegram @handle once linked (display only). */
+            telegram_username?: string;
             inbound_ids?: number[];
             grants?: components["schemas"]["ClientGrant"][];
             /** Format: date-time */

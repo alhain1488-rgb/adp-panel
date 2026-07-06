@@ -5,11 +5,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"html"
 	"io"
 	"log/slog"
 	"mime/multipart"
 	"net/http"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/adp/panel/internal/crypto"
@@ -27,6 +29,7 @@ const (
 	keyTgLastAt   = "backup_tg_last_at"
 	keyTgLastErr  = "backup_tg_last_error"
 	keyTgLastOK   = "backup_tg_last_ok"
+	keyTgOffset   = "backup_tg_updates_offset"
 
 	minIntervalHours     = 1
 	defaultIntervalHours = 24
@@ -55,7 +58,8 @@ type TelegramInput struct {
 	IntervalHours int    `json:"interval_hours"`
 }
 
-// Telegram schedules and sends encrypted backups to a Telegram chat.
+// Telegram schedules and sends encrypted backups to a Telegram chat, and (via
+// the link poller) delivers per-client configs to clients who link their chat.
 type Telegram struct {
 	svc     *Service
 	store   *store.Store
@@ -64,6 +68,9 @@ type Telegram struct {
 	client  *http.Client
 	apiBase string
 	now     func() time.Time
+
+	mu          sync.Mutex
+	botUsername string // cached getMe username; cleared when the token changes
 }
 
 // NewTelegram wires the Telegram backup delivery.
@@ -158,6 +165,10 @@ func (t *Telegram) SetConfig(ctx context.Context, in TelegramInput) error {
 		if err := set(keyTgTokenEnc, enc); err != nil {
 			return err
 		}
+		// A new token may be a different bot — drop the cached username.
+		t.mu.Lock()
+		t.botUsername = ""
+		t.mu.Unlock()
 	}
 	if in.Passphrase != "" {
 		enc, err := t.cipher.Encrypt(in.Passphrase)
@@ -351,15 +362,36 @@ func (t *Telegram) botChat(ctx context.Context) (token, chat string, err error) 
 	return token, chat, err
 }
 
-// SendMessage sends an HTML-formatted text message to the configured chat.
+// tokenOnly returns just the decrypted bot token (chat/passphrase not required).
+func (t *Telegram) tokenOnly(ctx context.Context) (string, error) {
+	tokenEnc, err := t.store.GetSetting(ctx, keyTgTokenEnc)
+	if err != nil {
+		return "", err
+	}
+	if tokenEnc == "" {
+		return "", fmt.Errorf("telegram: bot token is not set")
+	}
+	return t.cipher.Decrypt(tokenEnc)
+}
+
+// SendMessage sends an HTML-formatted text message to the configured backup chat.
 // Wrapping text in <code>…</code> makes Telegram copy it to the clipboard on tap.
-func (t *Telegram) SendMessage(ctx context.Context, html string) error {
-	token, chat, err := t.botChat(ctx)
+func (t *Telegram) SendMessage(ctx context.Context, htmlText string) error {
+	_, chat, err := t.botChat(ctx)
+	if err != nil {
+		return err
+	}
+	return t.SendMessageTo(ctx, chat, htmlText)
+}
+
+// SendMessageTo sends an HTML text message to an explicit chat id.
+func (t *Telegram) SendMessageTo(ctx context.Context, chatID, htmlText string) error {
+	token, err := t.tokenOnly(ctx)
 	if err != nil {
 		return err
 	}
 	body, _ := json.Marshal(map[string]any{
-		"chat_id": chat, "text": html, "parse_mode": "HTML", "disable_web_page_preview": true,
+		"chat_id": chatID, "text": htmlText, "parse_mode": "HTML", "disable_web_page_preview": true,
 	})
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
 		fmt.Sprintf("%s/bot%s/sendMessage", t.apiBase, token), bytes.NewReader(body))
@@ -370,15 +402,24 @@ func (t *Telegram) SendMessage(ctx context.Context, html string) error {
 	return tgDo(t.client, req)
 }
 
-// SendPhoto sends a photo (e.g. a QR PNG) with an HTML caption to the chat.
+// SendPhoto sends a photo (e.g. a QR PNG) with an HTML caption to the backup chat.
 func (t *Telegram) SendPhoto(ctx context.Context, filename string, photo []byte, htmlCaption string) error {
-	token, chat, err := t.botChat(ctx)
+	_, chat, err := t.botChat(ctx)
+	if err != nil {
+		return err
+	}
+	return t.SendPhotoTo(ctx, chat, filename, photo, htmlCaption)
+}
+
+// SendPhotoTo sends a photo with an HTML caption to an explicit chat id.
+func (t *Telegram) SendPhotoTo(ctx context.Context, chatID, filename string, photo []byte, htmlCaption string) error {
+	token, err := t.tokenOnly(ctx)
 	if err != nil {
 		return err
 	}
 	var buf bytes.Buffer
 	mw := multipart.NewWriter(&buf)
-	_ = mw.WriteField("chat_id", chat)
+	_ = mw.WriteField("chat_id", chatID)
 	if htmlCaption != "" {
 		_ = mw.WriteField("caption", htmlCaption)
 		_ = mw.WriteField("parse_mode", "HTML")
@@ -400,6 +441,57 @@ func (t *Telegram) SendPhoto(ctx context.Context, filename string, photo []byte,
 	}
 	req.Header.Set("Content-Type", mw.FormDataContentType())
 	return tgDo(t.client, req)
+}
+
+// SendClientConfig delivers a client's subscription link + QR to a specific chat.
+// The link is wrapped in <code> so tapping it copies the link in Telegram.
+func (t *Telegram) SendClientConfig(ctx context.Context, chatID, name, subURL string, qr []byte) error {
+	caption := fmt.Sprintf("<b>%s</b>\n<code>%s</code>", html.EscapeString(name), html.EscapeString(subURL))
+	return t.SendPhotoTo(ctx, chatID, "vpn-config.png", qr, caption)
+}
+
+// BotUsername returns the bot's @username (via getMe), cached after the first
+// successful lookup and invalidated when the token changes.
+func (t *Telegram) BotUsername(ctx context.Context) (string, error) {
+	t.mu.Lock()
+	cached := t.botUsername
+	t.mu.Unlock()
+	if cached != "" {
+		return cached, nil
+	}
+	token, err := t.tokenOnly(ctx)
+	if err != nil {
+		return "", err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
+		fmt.Sprintf("%s/bot%s/getMe", t.apiBase, token), nil)
+	if err != nil {
+		return "", err
+	}
+	resp, err := t.client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("telegram: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	var out struct {
+		OK          bool   `json:"ok"`
+		Description string `json:"description"`
+		Result      struct {
+			Username string `json:"username"`
+		} `json:"result"`
+	}
+	_ = json.Unmarshal(body, &out)
+	if !out.OK || out.Result.Username == "" {
+		if out.Description != "" {
+			return "", fmt.Errorf("telegram getMe: %s", out.Description)
+		}
+		return "", fmt.Errorf("telegram: could not read bot username")
+	}
+	t.mu.Lock()
+	t.botUsername = out.Result.Username
+	t.mu.Unlock()
+	return out.Result.Username, nil
 }
 
 // tgDo runs a Bot API request and surfaces the {ok,description} result.

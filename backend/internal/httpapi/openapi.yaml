@@ -1286,6 +1286,12 @@ components:
           type: string
         email:
           type: string
+        telegram_linked:
+          type: boolean
+          description: Whether the client has linked their Telegram chat via the deep link.
+        telegram_username:
+          type: string
+          description: The client's Telegram @handle once linked (display only).
         inbound_ids:
           type: array
           items:

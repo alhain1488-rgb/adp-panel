@@ -86,6 +86,99 @@ func (h *clientsHandler) sendEmail(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
+// telegramLink returns the client's personal Telegram deep link. Opening it and
+// pressing Start binds the user's Telegram chat to this client (handled by the
+// bot's link poller); after that the panel can push their config to Telegram.
+func (h *clientsHandler) telegramLink(w http.ResponseWriter, r *http.Request) {
+	id, ok := idParam(r)
+	if !ok {
+		writeError(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+	if _, err := h.svc.Get(r.Context(), id); errors.Is(err, store.ErrNotFound) {
+		writeError(w, http.StatusNotFound, "client not found")
+		return
+	} else if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to load client")
+		return
+	}
+	if h.telegram == nil {
+		writeError(w, http.StatusBadRequest, "Telegram bot is not configured (Settings → Backup)")
+		return
+	}
+	username, err := h.telegram.BotUsername(r.Context())
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "set up the Telegram bot first (Settings → Backup)")
+		return
+	}
+	token, err := h.svc.EnsureTelegramLinkToken(r.Context(), id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to build link")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"link":         fmt.Sprintf("https://t.me/%s?start=%s", username, token),
+		"bot_username": username,
+	})
+}
+
+// telegramConfig pushes the client's subscription link + QR to their linked chat.
+func (h *clientsHandler) telegramConfig(w http.ResponseWriter, r *http.Request) {
+	id, ok := idParam(r)
+	if !ok {
+		writeError(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+	c, err := h.svc.Get(r.Context(), id)
+	if errors.Is(err, store.ErrNotFound) {
+		writeError(w, http.StatusNotFound, "client not found")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to load client")
+		return
+	}
+	if c.TelegramChatID == "" {
+		writeError(w, http.StatusBadRequest, "this client hasn't linked their Telegram yet")
+		return
+	}
+	if h.telegram == nil {
+		writeError(w, http.StatusBadRequest, "Telegram bot is not configured (Settings → Backup)")
+		return
+	}
+	url, qr, err := h.svc.SubscriptionConfig(r.Context(), id, h.subBase)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if err := h.telegram.SendClientConfig(r.Context(), c.TelegramChatID, c.Name, url, qr); err != nil {
+		writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	h.audit(r, "client.telegram_config", c.ID, "{}")
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+// telegramUnlink forgets the client's linked Telegram chat.
+func (h *clientsHandler) telegramUnlink(w http.ResponseWriter, r *http.Request) {
+	id, ok := idParam(r)
+	if !ok {
+		writeError(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+	c, err := h.svc.UnlinkTelegram(r.Context(), id)
+	if errors.Is(err, store.ErrNotFound) {
+		writeError(w, http.StatusNotFound, "client not found")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to unlink")
+		return
+	}
+	h.audit(r, "client.telegram_unlink", c.ID, "{}")
+	writeJSON(w, http.StatusOK, h.toDTO(r.Context(), c, true))
+}
+
 // qrFileName makes a safe PNG filename from a client name.
 func qrFileName(name string) string {
 	safe := strings.Map(func(r rune) rune {
@@ -211,6 +304,8 @@ type clientDTO struct {
 	Enabled           bool             `json:"enabled"`
 	Remark            string           `json:"remark,omitempty"`
 	Email             string           `json:"email,omitempty"`
+	TelegramLinked    bool             `json:"telegram_linked"`
+	TelegramUsername  string           `json:"telegram_username,omitempty"`
 	InboundIDs        []int64          `json:"inbound_ids"`
 	Grants            []clientGrantDTO `json:"grants,omitempty"`
 	CreatedAt         string           `json:"created_at,omitempty"`
@@ -261,6 +356,7 @@ func (h *clientsHandler) toDTO(ctx context.Context, c *store.Client, withGrants 
 		ID: c.ID, Name: c.Name, UUID: c.UUID, Password: c.Password,
 		SubscriptionToken: c.SubscriptionToken, SubscriptionURL: h.subURL(c.SubscriptionToken),
 		Enabled: c.Enabled, Remark: c.Remark, Email: c.Email, InboundIDs: ids,
+		TelegramLinked: c.TelegramChatID != "", TelegramUsername: c.TelegramUsername,
 		CreatedAt: c.CreatedAt, UpdatedAt: c.UpdatedAt,
 	}
 	if withGrants {

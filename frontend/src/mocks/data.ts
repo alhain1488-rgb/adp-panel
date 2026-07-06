@@ -82,6 +82,9 @@ export interface Client {
   subscription_url: string;
   enabled: boolean;
   remark?: string;
+  email?: string;
+  telegram_linked?: boolean;
+  telegram_username?: string;
   inbound_ids: number[];
   grants: ClientGrant[];
   created_at: string;
@@ -542,6 +545,8 @@ export const clients: Client[] = [
       'https://panel.example.com/sub/ff00eeddccbbaa998877665544332211009f8e7d6c5b4a39281706f5e4d3c2b1',
     enabled: true,
     remark: 'iPhone — Hysteria2 preferred',
+    telegram_linked: true,
+    telegram_username: 'nick_tg',
     inbound_ids: [3, 6],
     grants: grantsFor([3, 6]),
     created_at: minsAgo(60 * 24 * 30),

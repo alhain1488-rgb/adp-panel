@@ -42,6 +42,53 @@ func TestCreate_GeneratesUniqueCredentials(t *testing.T) {
 	}
 }
 
+func TestTelegramLinkToken_CreatedAndStable(t *testing.T) {
+	svc, _, ctx := newSvc(t)
+	a, err := svc.Create(ctx, Input{Name: "a"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Create seeds a token so the deep link works without an extra round-trip.
+	if a.TelegramLinkToken == "" {
+		t.Fatal("Create should seed a telegram link token")
+	}
+	tok, err := svc.EnsureTelegramLinkToken(ctx, a.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tok != a.TelegramLinkToken {
+		t.Fatalf("ensure changed the token: %q vs %q", tok, a.TelegramLinkToken)
+	}
+	// Distinct clients get distinct tokens.
+	b, _ := svc.Create(ctx, Input{Name: "b"})
+	if b.TelegramLinkToken == a.TelegramLinkToken {
+		t.Fatal("link tokens collide between clients")
+	}
+}
+
+func TestSubscriptionConfig_URLAndQR(t *testing.T) {
+	svc, _, ctx := newSvc(t)
+	c, err := svc.Create(ctx, Input{Name: "a"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	url, qr, err := svc.SubscriptionConfig(ctx, c.ID, "https://panel.example/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "https://panel.example/sub/" + c.SubscriptionToken
+	if url != want {
+		t.Fatalf("url = %q, want %q", url, want)
+	}
+	if len(qr) == 0 || string(qr[:8]) != "\x89PNG\r\n\x1a\n" {
+		t.Fatalf("qr is not a PNG (%d bytes)", len(qr))
+	}
+	// No base URL configured → a clear error, no panic.
+	if _, _, err := svc.SubscriptionConfig(ctx, c.ID, ""); err == nil {
+		t.Fatal("expected error when subBase is empty")
+	}
+}
+
 func TestWGKeypair_GeneratedOnceAndStable(t *testing.T) {
 	svc, _, ctx := newSvc(t)
 	c, err := svc.Create(ctx, Input{Name: "wg"})

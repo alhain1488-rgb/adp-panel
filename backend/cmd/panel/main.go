@@ -28,7 +28,7 @@ import (
 )
 
 // version is the backend build version; kept in sync with the frontend APP_VERSION.
-const version = "0.9.4.1"
+const version = "0.9.5.0"
 
 func main() {
 	logger := logging.New()
@@ -115,6 +115,20 @@ func main() {
 	// Scheduled backups run until shutdown.
 	go telegramSvc.RunScheduler(ctx)
 	go emailBackupSvc.RunScheduler(ctx)
+
+	// Poll Telegram for clients opening their "/start" deep link; deliver their
+	// config the moment they link, so the operator needn't do anything.
+	sendClientTG := func(ctx context.Context, c *store.Client) {
+		url, qr, err := clientsSvc.SubscriptionConfig(ctx, c.ID, cfg.SubBaseURL)
+		if err != nil {
+			logger.Warn("telegram: build client config failed", "client", c.ID, "err", err)
+			return
+		}
+		if err := telegramSvc.SendClientConfig(ctx, c.TelegramChatID, c.Name, url, qr); err != nil {
+			logger.Warn("telegram: send client config failed", "client", c.ID, "err", err)
+		}
+	}
+	go telegramSvc.RunLinkPoller(ctx, sendClientTG)
 
 	select {
 	case err := <-errCh:
