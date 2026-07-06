@@ -2,181 +2,275 @@
 
 # Absolutely Disgusting Panel
 
+**Русский** · [English](README.en.md)
 
-A self-hosted web panel to manage several VPS running **Xray** and **Hysteria2**
-proxies from one place — for **personal use**. One panel on a main VPS controls the
-proxies on all your nodes over SSH: servers, inbounds of many protocols, clients,
-and their subscriptions. No billing, traffic limits, or multi-tenancy — by design.
+Самостоятельно-хостимая веб-панель для управления несколькими VPS с прокси **Xray**,
+**Hysteria2** и **AmneziaWG** из одного места — для **личного использования**. Одна панель на
+главном VPS централизованно управляет прокси на всех ваших нодах по SSH: серверы, inbound-ы
+разных протоколов, клиенты и их подписки. Никакого биллинга, лимитов трафика и мультиарендности —
+так задумано.
 
-- **Protocols:** VLESS (Reality & TLS), VMess, Trojan, Shadowsocks — natively via
-  xray-core; **Hysteria2** — via a separate engine on the node (sing-box), because
-  Hysteria2 (QUIC) is not an xray-core inbound.
-- **Access model:** a client is granted specific *inbounds* (not whole servers),
-  many-to-many. Its **subscription is assembled automatically** from all allowed &
-  enabled inbounds across every server and served at one public URL: `GET /sub/{token}`.
-- **Stack:** Go backend · React + TypeScript frontend · SQLite · Caddy (HTTPS) ·
-  Docker Compose.
+- **Протоколы:** VLESS (Reality и TLS), VMess, Trojan, Shadowsocks — нативно через xray-core;
+  **Hysteria2** — через отдельный движок на ноде (sing-box), т.к. Hysteria2 (QUIC) не является
+  inbound-ом xray-core; **AmneziaWG 2.0** — обфусцированный WireGuard, отдельным движком на ноде.
+- **Модель доступа:** клиенту выдаются конкретные *inbound-ы* (а не серверы целиком), связь
+  многие-ко-многим. **Подписка собирается автоматически** из всех разрешённых и включённых
+  inbound-ов клиента на всех серверах и отдаётся по одному публичному URL: `GET /sub/{token}`.
+- **Стек:** Go (backend) · React + TypeScript (frontend) · SQLite · Caddy (HTTPS) · Docker Compose.
 
-> Secrets (SSH keys/passwords, TOTP secret) are **encrypted at rest** (AES-256-GCM);
-> the admin password is only a bcrypt hash. Nothing is hardcoded — all secrets come
-> from the environment.
+> Секреты (SSH-ключи/пароли, TOTP-секрет, ключ Resend, парольные фразы) **шифруются at-rest**
+> (AES-256-GCM); пароль админа хранится только bcrypt-хэшем. Ничего не захардкожено — все секреты
+> берутся из окружения или задаются в UI и шифруются.
 
-## Requirements
+---
 
-- Docker + Docker Compose (locally we use **Colima** on macOS).
-- Managed nodes must be **Debian/Ubuntu** with root/sudo SSH and outbound internet
-  (the panel auto-installs xray-core + sing-box on server add).
+## Возможности
 
-## Install on a VPS (one command)
+**Ядро**
+- Управление несколькими **нодами** по SSH: статус, гео, версии движков, автопровижининг.
+- **Inbound-ы** всех протоколов выше; протокол-специфичные параметры живут в JSON-полях (схема БД
+  не меняется при добавлении протокола).
+- **Клиенты** с генерируемыми учётными данными (UUID, пароль протокола, токен подписки), выдача
+  доступа к inbound-ам, включение/выключение, ротация токена.
+- **Подписка** собирается автоматически и включает `vless://`, `vmess://`, `trojan://`, `ss://`,
+  `hysteria2://` и (отдельно) конфиги AmneziaWG.
+- **Мультидвижковый sync**: на одной ноде параллельно работают xray-core, sing-box и AmneziaWG.
 
-On a fresh **Debian/Ubuntu** server, `install.sh` does everything: installs Docker,
-adds swap on small boxes, generates secrets, picks a TLS site address, builds the
-images, and starts the stack. Re-running it updates in place and keeps your secrets.
+**Доставка клиентам**
+- **Клиентский портал** `/portal` — публичная страница: клиент входит по имени + токену подписки и
+  видит свою подписку (ссылка + QR, конфиги по серверам, AmneziaWG) в режиме read-only.
+- **Telegram-бот**: клиент по личной deep-link привязывает свой чат и сразу получает конфиг; дальше
+  может сам запросить его командой `/config` или кнопкой. Плюс кнопка **«Отправить конфиги»** —
+  рассылка ссылок+QR всех клиентов в резервный Telegram и на почту.
+- **Почта**: отправка подписки клиенту на e-mail (провайдер **Resend** по HTTPS или обычный SMTP).
+- Все сообщения клиентам (Telegram и почта) — **двуязычные RU (EN)** с фирменной плашкой.
+
+**Эксплуатация**
+- **Бэкапы** в трёх видах: ручной экспорт/импорт зашифрованного архива, авто-бэкап в **Telegram**,
+  авто-бэкап на **почту** (по расписанию).
+- Страница **«Система»** — нагрузка хоста панели (CPU, память, диск, аптайм) в реальном времени.
+- **i18n**: русский (по умолчанию) и английский; тёмная/светлая тема.
+- **Безопасность**: шифрование секретов, bcrypt для пароля админа, **2FA (TOTP)**, аудит-лог,
+  rate-limiting на публичных эндпоинтах.
+
+---
+
+## Установка на VPS (одной командой)
+
+На чистом **Debian/Ubuntu** `install.sh` делает всё: ставит Docker, добавляет swap на маленьких
+машинах, генерирует секреты, выбирает TLS-адрес, собирает образы и поднимает стек. Повторный запуск
+обновляет на месте и сохраняет ваши секреты.
 
 ```bash
-# as root, from a checkout of this repo:
+# от root, из чекаута репозитория:
 git clone https://github.com/alhain1488-rgb/adp-panel.git /opt/adp-panel
 cd /opt/adp-panel && sudo bash install.sh
 ```
 
-- **No domain?** Leave it — the panel is served on `<your-ip>.sslip.io` with a
-  **trusted Let's Encrypt cert** (no domain purchase needed).
-- **Have a domain** pointing at the server? Pass it for a cert on your own name:
+- **Нет домена?** Не указывайте — панель отдаётся на `<ваш-ip>.sslip.io` с **валидным
+  сертификатом Let's Encrypt** (покупать домен не нужно).
+- **Есть домен**, указывающий A-записью на сервер? Передайте его для сертификата на своё имя:
 
   ```bash
   sudo PANEL_DOMAIN=vpn.example.com bash install.sh
   ```
 
-The installer prints the URL and admin credentials at the end (also saved in
-`/opt/adp-panel/.env`). Options: `PANEL_ADMIN_USERNAME`, `PANEL_ADMIN_PASSWORD`,
-`INSTALL_DIR`, `REPO_URL`/`REPO_BRANCH`, and `GITHUB_TOKEN` (to clone a private repo).
+В конце установщик печатает URL и учётку админа (также сохранены в `/opt/adp-panel/.env`). Опции:
+`PANEL_ADMIN_USERNAME`, `PANEL_ADMIN_PASSWORD`, `INSTALL_DIR`, `REPO_URL`/`REPO_BRANCH`,
+`GITHUB_TOKEN` (для приватного репозитория).
 
-> If the repository is **public**, you can skip the clone and pipe it straight in:
-> `curl -fsSL <raw-url>/install.sh | sudo -E bash`. For a private repo, clone first
-> (as above) or provide `GITHUB_TOKEN`.
+### Обновление и повторный деплой
 
-## Quick start (local, full stack)
+```bash
+cd /opt/adp-panel && git pull && docker compose up --build -d
+docker image prune -f && docker builder prune -f   # чтобы диск не полз вверх
+```
 
-1. Create `.env` from the example and fill in the secrets:
+Сертификат Let's Encrypt Caddy продлевает сам. При смене IP сервера нужно лишь обновить A-запись
+домена на новый IP — подписки клиентов завязаны на домен, а не на IP.
+
+---
+
+## Локальный запуск (весь стек)
+
+1. Создайте `.env` из примера и заполните секреты:
 
    ```bash
    cp .env.example .env
-   # PANEL_ENCRYPTION_KEY — 32 bytes, base64:  openssl rand -base64 32
-   # PANEL_JWT_SECRET     — any long random string
-   # PANEL_ADMIN_USERNAME / PANEL_ADMIN_PASSWORD — first admin login
-   # PANEL_DOMAIN         — localhost for local; your domain on the VPS
+   # PANEL_ENCRYPTION_KEY — 32 байта, base64:  openssl rand -base64 32
+   # PANEL_JWT_SECRET     — любая длинная случайная строка
+   # PANEL_ADMIN_USERNAME / PANEL_ADMIN_PASSWORD — первый вход админа
+   # PANEL_DOMAIN         — localhost локально; ваш домен на VPS
    ```
 
-2. Bring up the whole panel:
+2. Поднимите панель целиком:
 
    ```bash
    docker compose up --build
    ```
 
-3. Open **https://localhost** (accept the local-CA warning — Caddy issues a
-   self-signed cert locally). Log in with the admin credentials; enable 2FA in
-   Settings. API docs (Swagger): **https://localhost/swagger**.
+3. Откройте **https://localhost** (примите предупреждение локального CA — Caddy выдаёт локальный
+   самоподписанный сертификат). Войдите админом, включите 2FA в «Настройках». Swagger:
+   **https://localhost/swagger**.
 
-4. Smoke-test the running stack end to end:
+4. Прогоните end-to-end smoke-тест:
 
    ```bash
    ./scripts/smoke.sh
    ```
 
-   It logs in, creates a server + inbounds (incl. Hysteria2), a client, grants
-   access, and asserts `GET /sub/{token}` returns a non-empty subscription with
-   both `vless://` and `hysteria2://` URIs.
+---
 
-## Development
+## Переменные окружения
 
-Backend (from `backend/`):
+| Переменная | Обяз. | Назначение |
+| --- | --- | --- |
+| `PANEL_ENCRYPTION_KEY` | ✅ | AES-256 мастер-ключ, base64 из 32 байт. Шифрует SSH/TOTP/почтовые секреты. |
+| `PANEL_JWT_SECRET` | ✅ | Подписывает сессионные токены. |
+| `PANEL_ADMIN_USERNAME` | | Логин первого админа (по умолчанию `admin`). |
+| `PANEL_ADMIN_PASSWORD` | ✅ | Пароль первого админа (хэшируется bcrypt при засеве). |
+| `PANEL_DOMAIN` | | Публичный хост (по умолчанию `localhost`). |
+| `PANEL_SUB_BASE_URL` | | Базовый URL подписок (выводится из домена, если не задан). |
+| `DB_PATH` | | Путь к SQLite (по умолчанию `/data/panel.db`). |
+| `PANEL_HTTP_ADDR` | | Адрес прослушивания backend (по умолчанию `:8080`). |
+| `PANEL_SITE_ADDRESS` | | Сайт Caddy (compose): `localhost` локально, ваш домен на VPS (авто Let's Encrypt). Можно перечислить несколько через запятую. |
+
+Отсутствие **обязательной** переменной — фатальная ошибка старта. Панель никогда не выдумывает секреты.
+
+> Почта, Telegram-бот и бэкапы настраиваются **в UI** («Настройки» → «Бэкапы» / «Отправка почты»), а
+> их секреты (токен бота, ключ Resend, парольные фразы) шифруются в БД тем же мастер-ключом.
+
+---
+
+## Как это работает
+
+### Провижининг нод (`internal/provision`)
+При добавлении сервера панель по SSH сама ставит движки как systemd-сервисы: **xray-core** +
+**sing-box** (для Hysteria2), при необходимости **AmneziaWG** (модуль ядра через DKMS из
+`ppa:amnezia/ppa`, либо userspace `amneziawg-go`), и генерирует самоподписанный TLS-сертификат для
+Hysteria2. Только Debian/Ubuntu (apt + systemd). Пока нода не в статусе `installed`, sync на неё
+ничего не пушит.
+
+### Мультидвижковый sync (`internal/sync`)
+Sync раскладывает inbound-ы ноды по целевым движкам, генерирует конфиг **каждого** движка из
+включённых inbound-ов и выданных им клиентов, затем по SSH: делает бэкап, пишет конфиг, **валидирует**
+(`xray -test` для Xray, проверка конфига для sing-box/AmneziaWG), при ошибке откатывает бэкап и
+рестартит соответствующий сервис. Идемпотентно по хэшу конфига.
+
+### Hysteria2 и AmneziaWG — почему отдельные движки
+- **Hysteria2** — это QUIC-протокол, он **не** является inbound-ом xray-core и не попадает в
+  `config.json` Xray. Компилируется в отдельный конфиг sing-box на ноде, в подписке даёт
+  `hysteria2://…`.
+- **AmneziaWG 2.0** — обфусцированный WireGuard, работает отдельным сервисом (`awg-quick@awgN`).
+  Клиенту отдаётся два формата: ссылка **`vpn://`** для приложения AmneziaVPN (совместима с их
+  форматом 2.0) и файл **`.conf`** для приложения AmneziaWG. Обфускация (Jc/Jmin/Jmax, S1–S4,
+  H1–H4, I1) прописывается по дефолтам AmneziaVPN.
+
+### Подписка
+Единственный публичный (по токену) эндпоинт `GET /sub/{token}` собирает подписку из всех
+разрешённых и включённых inbound-ов клиента на всех серверах. Клиент вставляет ссылку в приложение
+(sing-box, Hiddify, v2rayN, Streisand…) и получает все конфиги автоматически.
+
+### Клиентский портал (`/portal`)
+Публичная страница вне админского входа. Клиент вводит **имя + токен подписки** (принимается и
+целиком ссылка `/sub/…` — токен извлекается) → сервер ищет клиента по токену, сверяет имя
+(регистронезависимо), пускает только включённых, и отдаёт read-only подписку: ссылку + QR, конфиги
+по серверам (с копированием и QR), AmneziaWG. Эндпоинт с rate-limit и обобщённой ошибкой (без утечки
+«что именно не так»). Логин = имя, пароль = существующий токен — отдельной системы паролей нет.
+
+### Telegram-бот
+Один и тот же бот-токен обслуживает бэкапы и доставку клиентам. Bot API **не даёт боту писать
+пользователю первым**, поэтому:
+1. Панель выдаёт клиенту личную ссылку `t.me/<бот>?start=<токен>`.
+2. Клиент открывает её и жмёт **Start** → фоновый long-poll `getUpdates` ловит `/start <токен>`,
+   сохраняет `chat_id` клиента и **сразу отправляет конфиг**.
+3. Дальше клиент сам получает конфиг кнопкой «🔄 Получить конфиг» или командой `/config`.
+
+Кнопка **«Отправить конфиги»** на вкладке «Клиенты» рассылает ссылки+QR всех клиентов в резервный
+Telegram (моноширинный текст = тап копирует) и на резервную почту.
+
+### Почта
+Провайдер **Resend** (по HTTPS, порт 443) или обычный SMTP. Resend нужен там, где хостер блокирует
+исходящий SMTP. Письмо клиенту с подпиской идёт двумя частями: plain-text и HTML с фирменной плашкой
+(логотип грузится с `/cheremsha.png`). Тексты двуязычные — RU с переводом на EN в скобках.
+
+### Бэкапы
+- **Экспорт/импорт**: зашифрованный архив `.adpbak` (AES-256-GCM по парольной фразе). Импорт
+  применяется на следующем старте (панель перезапускается).
+- **Авто-бэкап в Telegram** и **на почту**: по расписанию (интервал в часах), с записью статуса
+  последнего запуска.
+
+### Страница «Система»
+`GET /api/system` читает метрики хоста из `/proc` (`loadavg`, `meminfo`, `uptime`) и `statfs`. На
+Linux эти файлы отражают **хост**, даже когда backend работает в контейнере, — так что цифры про сам
+VPS. Страница обновляется каждые 4 сек.
+
+### Добавление протокола
+Протоколы живут в реестре (`backend/internal/protocols`). Чтобы добавить — реализуйте интерфейс
+`Protocol` (`Name`, `Engine`, `BuildInbound`, `BuildLink`) и зарегистрируйте в `init()` адаптера.
+**Схему БД не менять** — протокол-специфичные параметры в JSON-полях (`settings`, `stream_settings`,
+`sniffing`). Желание завести новую колонку — признак ошибки дизайна.
+
+---
+
+## Разработка
+
+Backend (из `backend/`):
 
 ```bash
-go run ./cmd/panel     # needs the env vars from .env
-go test ./...          # unit + e2e tests
+go run ./cmd/panel     # нужны env-переменные из .env
+go test ./...          # unit + e2e тесты
 go vet ./... && gofmt -l .
-# engine-integration tests (need Docker):
+# интеграционные тесты движков (нужен Docker):
 go test -tags=integration -run Integration ./internal/protocols/ ./internal/sync/ -v
 ```
 
-Frontend (from `frontend/`):
+Frontend (из `frontend/`):
 
 ```bash
 npm ci
-npm run dev            # http://localhost:5173 — runs on mock data by default
-npm run build          # production build (mocks off)
+npm run dev            # http://localhost:5173 — по умолчанию на моках
+npm run build          # прод-сборка (моки off)
 npm run test && npm run lint
 ```
 
-- The frontend talks to the backend only through the REST API + generated types
-  (`src/api/schema.ts`, regenerate with `npm run gen:api`). The mock layer (MSW)
-  and the real backend both honor `docs/openapi.yaml`.
-- Mocks are controlled by `VITE_USE_MOCKS` (defaults on for `npm run dev`; the
-  Docker image builds with `VITE_USE_MOCKS=false`). To run dev against a live
-  backend: `VITE_USE_MOCKS=false npm run dev` with the backend on `:8080`.
+- Фронт общается с backend только через REST API + сгенерированные типы (`src/api/schema.ts`,
+  регенерация `npm run gen:api`). Мок-слой (MSW) и реальный backend соблюдают один контракт
+  `docs/openapi.yaml`.
+- Моки управляются `VITE_USE_MOCKS` (по умолчанию on для `npm run dev`; Docker-образ собирается с
+  `VITE_USE_MOCKS=false`). Прогон dev против живого backend: `VITE_USE_MOCKS=false npm run dev`.
 
-## Environment variables
+---
 
-| Variable | Required | Purpose |
-| --- | --- | --- |
-| `PANEL_ENCRYPTION_KEY` | ✅ | AES-256 master key, base64 of 32 bytes. Encrypts SSH/TOTP secrets. |
-| `PANEL_JWT_SECRET` | ✅ | Signs session tokens. |
-| `PANEL_ADMIN_USERNAME` | | First admin username (default `admin`). |
-| `PANEL_ADMIN_PASSWORD` | ✅ | First admin password (bcrypt-hashed on seed). |
-| `PANEL_DOMAIN` | | Public hostname (default `localhost`). |
-| `PANEL_SUB_BASE_URL` | | Base URL for subscription links (derived from domain if unset). |
-| `DB_PATH` | | SQLite path (default `/data/panel.db`). |
-| `PANEL_HTTP_ADDR` | | Backend listen address (default `:8080`). |
-| `PANEL_SITE_ADDRESS` | | Caddy site (compose): `localhost` locally, your domain on the VPS (auto Let's Encrypt). |
+## Траблшутинг
 
-A missing **required** variable is a fatal startup error — the panel never invents
-secrets.
+- **Предупреждение TLS на https://localhost** — ожидаемо: Caddy использует локальный CA. Примите
+  его или доверьте корневой сертификат Caddy.
+- **`docker compose` не находит демон (macOS)** — запустите Colima: `colima start`.
+- **Сервер завис в `provisioning` / sync отказывается пушить** — нода должна сперва дойти до
+  `installed` (Debian/Ubuntu, root SSH, интернет). Перезапустите установку с карточки сервера.
+- **Конфиг отклонён на sync** — панель валидирует `xray -test` / проверкой конфига и откатывает
+  предыдущий; причина в `last_sync_error` сервера.
+- **Письма не уходят через SMTP** — многие хостеры блокируют исходящий SMTP (25/465/587). Переключите
+  провайдер почты на **Resend** («Настройки» → «Отправка почты»).
+- **Черемша не появляется рядом с сообщениями бота** — задайте боту аватар один раз в @BotFather:
+  `/setuserpic` → выбрать бота → отправить `https://<ваш-домен>/cheremsha.png`.
 
-## How it works
+---
 
-- **Provisioning** (`internal/provision`): on server add, the panel installs
-  xray-core + sing-box as systemd services and generates a self-signed TLS cert for
-  Hysteria2. Debian/Ubuntu only. Until a node is `installed`, sync won't push to it.
-- **Sync** (`internal/sync`) is **multi-engine**: it assembles each engine's config
-  (Xray `config.json` and, for Hysteria2 inbounds, the sing-box config) from a node's
-  enabled inbounds and their granted clients, then over SSH: backs up, writes,
-  validates (`xray -test` / `sing-box check`), restores the backup on failure, and
-  restarts the service. Idempotent by config hash.
-- **Hysteria2** is a QUIC protocol and is **not** an xray-core inbound: it never
-  enters Xray's `config.json`. It compiles to a separate sing-box config on the node
-  and produces `hysteria2://…` subscription URIs. See `docs/SPEC.md §5`.
+РАФОН - ЛОХ
 
-### Adding a protocol
-
-Protocols live in a registry (`backend/internal/protocols`). To add one, implement
-the `Protocol` interface (`Name`, `Engine`, `BuildInbound`, `BuildLink`) and register
-it in the adapter's `init()`. **Do not change the DB schema** — protocol-specific
-parameters live in the JSON columns (`settings`, `stream_settings`, `sniffing`).
-Wanting a new column is a design smell.
-
-## Troubleshooting
-
-- **Browser TLS warning at https://localhost** — expected: Caddy uses a local CA.
-  Accept it, or trust Caddy's root cert.
-- **`docker compose` can't find the daemon (macOS)** — start Colima: `colima start`.
-- **Server stuck `provisioning` / sync refuses to push** — the node must reach
-  `installed` first (Debian/Ubuntu, root SSH, outbound internet). Re-run install from
-  the server card.
-- **Config rejected on sync** — the panel validates with `xray -test` / `sing-box
-  check` and restores the previous config; the reason is stored in the server's
-  `last_sync_error`.
-
-## Project layout
+## Структура проекта
 
 РАФОН - ЛОХ
 
 ```
-backend/    Go API, protocol registry, provisioning, sync engine
-frontend/   React + TS SPA (mock layer + real API client, same contract)
-deploy/      Caddyfile, web image (frontend build + Caddy)
-docs/        SPEC, ROADMAP, ARCHITECTURE, openapi.yaml, PROGRESS
-scripts/     smoke.sh
-test/        dockerized xray / hysteria nodes for integration tests
+backend/    Go API, реестр протоколов, провижининг, sync-движок, почта, бэкапы, Telegram-бот
+frontend/   React + TS SPA (мок-слой + реальный API, один контракт), портал, i18n
+deploy/     Caddyfile, web-образ (сборка фронта + Caddy)
+docs/       SPEC, ROADMAP, ARCHITECTURE, openapi.yaml, PROGRESS
+scripts/    smoke.sh
+test/       dockerized xray / hysteria ноды для интеграционных тестов
 ```
 
-Full spec: `docs/SPEC.md`. Phased plan & status: `docs/ROADMAP.md`, `docs/PROGRESS.md`.
+Полное ТЗ: `docs/SPEC.md`. Пошаговый план и статус: `docs/ROADMAP.md`, `docs/PROGRESS.md`.
