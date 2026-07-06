@@ -453,4 +453,22 @@ Panel)». В почте плашка — HTML с настоящим логоти
 - `frontend/public/cheremsha.png` (конверт из webp, 160px) для писем и аватара бота в @BotFather.
 
 **Проверено:** backend `go build/vet/gofmt` + полный тест-сьют зелёные (+ `brand`, `buildRichMessage`,
-Resend-`html`); frontend `build`; `/cheremsha.png` отдаётся 200 image/png.
+Resend-`html`); frontend `build`; `/cheremsha.png` отдаётся 200 image/png. Живой тест на проде
+(send-configs): письмо на почту + 4 сообщения в Telegram с двуязычием и плашкой.
+
+## Пост-9 — Клиентский портал (self-service подписка) ✅ (v0.9.9.0)
+
+Публичная страница `/portal` (вне админского входа; дефолт-сайт админа не тронут). Клиент входит по
+**имени + токену подписки** (принимается и целиком ссылка `/sub/…` — токен извлекается) и видит свою
+подписку read-only: ссылку + QR, конфиги по серверам (badge протокола, copy, QR-диалог), AmneziaWG
+(vpn:// + QR + скачивание `.conf`). Логин=имя, пароль=существующий токен — новой системы паролей нет.
+
+- Backend: публичный `POST /api/portal/login` (`portalHandler`) — поиск клиента по токену, сверка имени
+  (case-insensitive), только включённые; ответ — bundle (sub URL + links + awg). Rate-limit 20/мин по IP,
+  ответ без oracle («Неверное имя или токен»). `portalToken` вытаскивает токен из ссылки.
+- Frontend: `api/portal.ts`, страница `Portal.tsx` (форма входа + read-only вид), роут `/portal` вне
+  `Protected`; свой шапка с логотипом + переключатели языка/темы.
+
+**Проверено:** backend `go build/vet/gofmt/test` (+ `TestPortalLogin` верный/неверный/полный-URL/выключенный,
+`TestPortalToken`); frontend `tsc/lint/build`; превью — вход по полной ссылке → подписка+QR+конфиги+AWG,
+неверный вход → 401 двуязычный, консоль чистая.

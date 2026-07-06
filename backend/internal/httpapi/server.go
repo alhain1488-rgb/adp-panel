@@ -92,6 +92,15 @@ func Router(d Deps) http.Handler {
 		})
 	}
 
+	// Public client portal login (name + subscription token, rate-limited).
+	if d.Clients != nil {
+		ph := &portalHandler{svc: d.Clients, store: d.Store, subBase: d.SubBaseURL}
+		r.Group(func(r chi.Router) {
+			r.Use(httprate.LimitByIP(20, time.Minute))
+			r.Post("/api/portal/login", ph.login)
+		})
+	}
+
 	// Protected API.
 	r.Group(func(r chi.Router) {
 		r.Use(d.Auth.RequireAuth)

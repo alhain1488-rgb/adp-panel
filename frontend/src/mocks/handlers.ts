@@ -724,6 +724,47 @@ export const handlers = [
     return json(res)
   }),
 
+  // ---- Public client portal (name + subscription token) ----
+  http.post('/api/portal/login', async ({ request }) => {
+    const input = (await request.json()) as { name?: string; token?: string }
+    const name = (input.name ?? '').trim()
+    let token = (input.token ?? '').trim()
+    const si = token.lastIndexOf('/sub/')
+    if (si >= 0) token = token.slice(si + 5)
+    const cut = token.search(/[/?#]/)
+    if (cut >= 0) token = token.slice(0, cut)
+    token = token.trim()
+    const invalid = () => json({ error: 'Неверное имя или токен (Invalid name or token)' }, { status: 401 })
+    if (!name || !token) return invalid()
+    const c = clients.find((x) => x.subscription_token === token)
+    if (!c || c.name.trim().toLowerCase() !== name.toLowerCase()) return invalid()
+    if (!c.enabled) {
+      return json(
+        { error: 'Ваш доступ отключён администратором (Your access has been disabled by the administrator.)' },
+        { status: 403 },
+      )
+    }
+    const links = c.inbound_ids
+      .map((iid) => inbounds.find((i) => i.id === iid))
+      .filter((ib): ib is Inbound => !!ib && ib.enabled)
+      .map((ib) => {
+        const srv = servers.find((s) => s.id === ib.server_id)!
+        return { inbound_id: ib.id, server_name: srv.name, protocol: ib.protocol, remark: ib.remark, uri: buildLink(srv, ib, c) }
+      })
+    // Demo: expose one sample AmneziaWG config so the portal's AWG section renders.
+    const amneziawg = [
+      {
+        inbound_id: 9001,
+        tag: 'awg-mobile',
+        server_name: servers[0]?.name ?? 'node',
+        server_host: servers[0]?.host ?? 'node.example.com',
+        conf: '[Interface]\nPrivateKey = <client>\nAddress = 10.9.9.2/32\nDNS = 1.1.1.1\nMTU = 1280\n\n[Peer]\nPublicKey = <server>\nEndpoint = ' + (servers[0]?.host ?? 'node') + ':51820\nAllowedIPs = 0.0.0.0/0\nPersistentKeepalive = 25\n',
+        vpn_link: 'vpn://mock-amneziawg-deep-link-payload',
+      },
+    ]
+    return json({ name: c.name, subscription_url: c.subscription_url, links, amneziawg })
+  }),
+
   // ---- System (host metrics for the panel machine) ----
   http.get('/api/system', ({ request }) => {
     if (!requireAuth(request)) return unauthorized()

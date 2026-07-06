@@ -9,6 +9,7 @@ import ClientDetailPage from './pages/ClientDetail'
 import SettingsPage from './pages/Settings'
 import LogsPage from './pages/Logs'
 import SystemPage from './pages/System'
+import PortalPage from './pages/Portal'
 
 function Protected({ children }: { children: React.ReactNode }) {
   const { authenticated, loading } = useAuth()
@@ -26,6 +27,7 @@ export default function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/login" element={<LoginPage />} />
+        <Route path="/portal" element={<PortalPage />} />
         <Route
           element={
             <Protected>
