@@ -262,8 +262,6 @@ npm run test && npm run lint
 
 ## Структура проекта
 
-РАФОН - ЛОХ
-
 ```
 backend/    Go API, реестр протоколов, провижининг, sync-движок, почта, бэкапы, Telegram-бот
 frontend/   React + TS SPA (мок-слой + реальный API, один контракт), портал, i18n
