@@ -140,6 +140,13 @@ for _ in $(seq 1 60); do
   sleep 3
 done
 
+# --- reclaim disk ---------------------------------------------------------
+# Each rebuild leaves a superseded image + build cache behind; on a small VPS
+# that piles up fast, so prune the leftovers now that the new stack is running.
+log "Reclaiming disk from old images and build cache…"
+docker image prune -f >/dev/null 2>&1 || true
+docker builder prune -f >/dev/null 2>&1 || true
+
 # --- summary --------------------------------------------------------------
 admin_user="$(grep -E '^PANEL_ADMIN_USERNAME=' .env | cut -d= -f2-)"
 admin_pass="$(grep -E '^PANEL_ADMIN_PASSWORD=' .env | cut -d= -f2-)"
@@ -152,6 +159,9 @@ cat <<EOF
     Secrets live in ${APP_DIR}/.env (chmod 600) — back them up.
     Manage:    cd ${APP_DIR} && docker compose ps | logs -f | restart | down
     Update:    re-run this installer (keeps your secrets and data).
+
+    Next, in the panel → Settings: e-mail (Resend/SMTP), Telegram bot and
+    auto-backups. Clients can self-serve their subscription at https://${SITE}/portal
 EOF
 
 if [ -z "${PANEL_DOMAIN:-}" ]; then
