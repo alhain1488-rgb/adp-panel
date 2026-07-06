@@ -1,6 +1,7 @@
+Навайбкодил хуету, не написал ни строчки, кроме этой
+
 # Absolutely Disgusting Panel
 
-РАФОН - ЛОХ
 
 A self-hosted web panel to manage several VPS running **Xray** and **Hysteria2**
 proxies from one place — for **personal use**. One panel on a main VPS controls the
@@ -166,6 +167,8 @@ Wanting a new column is a design smell.
   `last_sync_error`.
 
 ## Project layout
+
+РАФОН - ЛОХ
 
 ```
 backend/    Go API, protocol registry, provisioning, sync engine
