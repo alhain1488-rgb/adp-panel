@@ -13,6 +13,7 @@ import (
 
 	"github.com/adp/panel/internal/auth"
 	"github.com/adp/panel/internal/backup"
+	"github.com/adp/panel/internal/brand"
 	"github.com/adp/panel/internal/clients"
 	"github.com/adp/panel/internal/mail"
 	"github.com/adp/panel/internal/store"
@@ -29,28 +30,59 @@ type clientsHandler struct {
 	emailBackup *backup.Email
 }
 
-// emailSubject / emailBody render the "here is your VPN subscription" message
-// sent to a client's contact address.
-func emailSubject(name string) string {
-	return "Your VPN subscription" + func() string {
-		if name != "" {
-			return " — " + name
-		}
+// brandImageURL is the public URL of the mascot PNG the panel serves, used in
+// HTML e-mail footers. Empty if no public base URL is configured.
+func (h *clientsHandler) brandImageURL() string {
+	if h.subBase == "" {
 		return ""
-	}()
+	}
+	return strings.TrimRight(h.subBase, "/") + "/cheremsha.png"
+}
+
+// emailSubject / emailBody / emailHTMLBody render the "here is your VPN
+// subscription" message sent to a client's contact address, bilingually
+// (Russian, with an English translation in parentheses).
+func emailSubject(name string) string {
+	s := "Ваша VPN-подписка (Your VPN subscription)"
+	if name != "" {
+		s += " — " + name
+	}
+	return s
 }
 
 func (h *clientsHandler) emailBody(c store.Client) string {
 	url := h.subURL(c.SubscriptionToken)
 	var b strings.Builder
 	if c.Name != "" {
-		b.WriteString("Hi " + c.Name + ",\n\n")
+		b.WriteString("Здравствуйте, " + c.Name + "! (Hello, " + c.Name + "!)\n\n")
 	}
-	b.WriteString("Here is your personal VPN subscription link. Add it to your client app ")
-	b.WriteString("(sing-box, Hiddify, v2rayN, Streisand, etc.) to receive all your configs automatically:\n\n")
+	b.WriteString("Ваша персональная ссылка-подписка. Добавьте её в VPN-приложение ")
+	b.WriteString("(sing-box, Hiddify, v2rayN, Streisand и т.п.), чтобы автоматически получать все конфигурации:\n")
+	b.WriteString("(Your personal subscription link — add it to your VPN app to receive all configs automatically.)\n\n")
 	b.WriteString(url + "\n\n")
-	b.WriteString("Keep this link private — anyone with it can use your access. ")
-	b.WriteString("If it leaks, ask the operator to rotate your subscription token.\n")
+	b.WriteString("Храните ссылку в тайне — любой, у кого она есть, получит ваш доступ. ")
+	b.WriteString("Если она утекла, попросите оператора перевыпустить токен.\n")
+	b.WriteString("(Keep this link private — anyone who has it can use your access. If it leaks, ask the operator to rotate your token.)\n\n")
+	b.WriteString(brand.TextFooter())
+	return b.String()
+}
+
+func (h *clientsHandler) emailHTMLBody(c store.Client) string {
+	url := h.subURL(c.SubscriptionToken)
+	esc := html.EscapeString
+	var b strings.Builder
+	b.WriteString(`<div style="font-family:sans-serif;font-size:15px;color:#222;line-height:1.5">`)
+	if c.Name != "" {
+		b.WriteString("<p>Здравствуйте, <b>" + esc(c.Name) + `</b>! <span style="color:#888">(Hello, ` + esc(c.Name) + "!)</span></p>")
+	}
+	b.WriteString(`<p>Ваша персональная ссылка-подписка. Добавьте её в VPN-приложение ` +
+		`(sing-box, Hiddify, v2rayN, Streisand и т.п.), чтобы автоматически получать все конфигурации:` +
+		`<br><span style="color:#888">(Your personal subscription link — add it to your VPN app to receive all configs automatically.)</span></p>`)
+	b.WriteString(`<p style="margin:16px 0"><a href="` + esc(url) + `" style="word-break:break-all">` + esc(url) + `</a></p>`)
+	b.WriteString(`<p style="color:#666;font-size:13px">Храните ссылку в тайне — любой, у кого она есть, получит ваш доступ. ` +
+		`<span style="color:#999">(Keep this link private; if it leaks, ask the operator to rotate your token.)</span></p>`)
+	b.WriteString(brand.HTMLFooter(h.brandImageURL()))
+	b.WriteString(`</div>`)
 	return b.String()
 }
 
@@ -78,7 +110,10 @@ func (h *clientsHandler) sendEmail(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "SMTP is not configured; set it up in Settings")
 		return
 	}
-	if err := h.mailer.Send(r.Context(), []string{c.Email}, emailSubject(c.Name), h.emailBody(*c)); err != nil {
+	if err := h.mailer.SendMessage(r.Context(), mail.Message{
+		To: []string{c.Email}, Subject: emailSubject(c.Name),
+		Text: h.emailBody(*c), HTML: h.emailHTMLBody(*c),
+	}); err != nil {
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
 	}
@@ -247,14 +282,26 @@ func (h *clientsHandler) sendConfigs(w http.ResponseWriter, r *http.Request) {
 		if to == "" {
 			resp["email_error"] = "no backup e-mail recipient set"
 		} else {
-			var body strings.Builder
-			body.WriteString("Subscription links for all clients (QR codes attached as PNGs).\n\n")
+			var text strings.Builder
+			var htmlB strings.Builder
+			text.WriteString("Ссылки-подписки всех клиентов (QR-коды во вложениях).\n")
+			text.WriteString("(Subscription links for all clients; QR codes attached as PNGs.)\n\n")
+			htmlB.WriteString(`<div style="font-family:sans-serif;font-size:14px;color:#222;line-height:1.5">`)
+			htmlB.WriteString(`<p>Ссылки-подписки всех клиентов (QR-коды во вложениях).<br>` +
+				`<span style="color:#888">(Subscription links for all clients; QR codes attached as PNGs.)</span></p><ul>`)
 			atts := make([]mail.Attachment, 0, len(items))
 			for _, it := range items {
-				body.WriteString(it.name + "\n" + it.url + "\n\n")
+				text.WriteString(it.name + "\n" + it.url + "\n\n")
+				htmlB.WriteString(`<li><b>` + html.EscapeString(it.name) + `</b><br><a href="` +
+					html.EscapeString(it.url) + `" style="word-break:break-all">` + html.EscapeString(it.url) + `</a></li>`)
 				atts = append(atts, mail.Attachment{Filename: qrFileName(it.name), Data: it.qr, ContentType: "image/png"})
 			}
-			if err := h.mailer.Send(ctx, []string{to}, "ADP panel — client subscriptions", body.String(), atts...); err != nil {
+			text.WriteString(brand.TextFooter())
+			htmlB.WriteString(`</ul>` + brand.HTMLFooter(h.brandImageURL()) + `</div>`)
+			if err := h.mailer.SendMessage(ctx, mail.Message{
+				To: []string{to}, Subject: "Подписки клиентов (Client subscriptions)",
+				Text: text.String(), HTML: htmlB.String(), Attachments: atts,
+			}); err != nil {
 				resp["email_error"] = err.Error()
 			} else {
 				resp["email_sent"] = true
@@ -411,8 +458,10 @@ func (h *clientsHandler) create(w http.ResponseWriter, r *http.Request) {
 	// If a contact e-mail was provided and SMTP is set up, send the subscription.
 	if c.Email != "" && h.mailer != nil && h.mailer.Configured(r.Context()) {
 		go func(cl store.Client) {
-			_ = h.mailer.Send(context.Background(), []string{cl.Email},
-				emailSubject(cl.Name), h.emailBody(cl))
+			_ = h.mailer.SendMessage(context.Background(), mail.Message{
+				To: []string{cl.Email}, Subject: emailSubject(cl.Name),
+				Text: h.emailBody(cl), HTML: h.emailHTMLBody(cl),
+			})
 		}(*c)
 	}
 	writeJSON(w, http.StatusCreated, h.toDTO(r.Context(), c, false))

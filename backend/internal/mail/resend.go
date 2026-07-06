@@ -17,7 +17,7 @@ var resendEndpoint = "https://api.resend.com/emails"
 
 // sendResend delivers a message through Resend's HTTPS API (port 443), which
 // works on hosts whose provider blocks outbound SMTP.
-func (m *Mailer) sendResend(ctx context.Context, cfg resolved, to []string, subject, body string, atts []Attachment) error {
+func (m *Mailer) sendResend(ctx context.Context, cfg resolved, to []string, subject, text, htmlBody string, atts []Attachment) error {
 	type attachment struct {
 		Filename string `json:"filename"`
 		Content  string `json:"content"` // base64
@@ -26,7 +26,10 @@ func (m *Mailer) sendResend(ctx context.Context, cfg resolved, to []string, subj
 		"from":    cfg.from,
 		"to":      to,
 		"subject": subject,
-		"text":    body,
+		"text":    text,
+	}
+	if htmlBody != "" {
+		payload["html"] = htmlBody
 	}
 	if len(atts) > 0 {
 		list := make([]attachment, 0, len(atts))

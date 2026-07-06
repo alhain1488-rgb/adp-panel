@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/adp/panel/internal/brand"
 	"github.com/adp/panel/internal/crypto"
 	"github.com/adp/panel/internal/store"
 )
@@ -470,7 +471,9 @@ func (t *Telegram) sendPhoto(ctx context.Context, chatID, filename string, photo
 // with the "get config again" reply keyboard attached. The link is wrapped in
 // <code> so tapping it copies the link in Telegram.
 func (t *Telegram) SendClientConfig(ctx context.Context, chatID, name, subURL string, qr []byte) error {
-	caption := fmt.Sprintf("<b>%s</b>\n<code>%s</code>", html.EscapeString(name), html.EscapeString(subURL))
+	caption := fmt.Sprintf(
+		"<b>%s</b>\nВаша VPN-подписка (Your VPN subscription):\n<code>%s</code>\n\n%s",
+		html.EscapeString(name), html.EscapeString(subURL), brand.TextFooter())
 	return t.sendPhoto(ctx, chatID, "vpn-config.png", qr, caption, clientKeyboardJSON())
 }
 

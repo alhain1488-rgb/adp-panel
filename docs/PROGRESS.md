@@ -438,3 +438,19 @@ config-команда/кнопка/bare-start, клавиатура в конф�
 **Проверено:** backend `go build/vet/gofmt/test` зелёные (+ `parseLoadAvg/MemInfo/Uptime`, `Collect`);
 frontend `tsc/lint/build/test` (7/7); превью — 4 карточки в ряд на десктопе (grid xl:4) и стопкой на
 узком, бары/аптайм/детали на месте, версия `0.9.7.0`, консоль чистая.
+
+## Пост-9 — Двуязычные сообщения + плашка Черемши ✅ (v0.9.8.0)
+
+Все сообщения клиентам (Telegram и почта) — теперь на русском с переводом на английский в скобках,
+и после каждого стоит фирменная плашка «🐰 Абсолютно отвратительная панель (Absolutely Disgusting
+Panel)». В почте плашка — HTML с настоящим логотипом Черемши (грузится с `/cheremsha.png`).
+
+- Новый пакет `internal/brand` (`TextFooter`/`HTMLFooter`) — единый источник названия и плашки.
+- `mail`: `Message` + `SendMessage` (multipart/alternative text+HTML), `buildRichMessage`, `html` в Resend.
+- `httpapi/clients`: `emailSubject/emailBody/emailHTMLBody` двуязычные + плашка; рассылка «Отправить
+  конфиги» тоже двуязычная с HTML-плашкой.
+- `backup/telegram`: подпись конфига + все сообщения поллера двуязычные с текстовой плашкой.
+- `frontend/public/cheremsha.png` (конверт из webp, 160px) для писем и аватара бота в @BotFather.
+
+**Проверено:** backend `go build/vet/gofmt` + полный тест-сьют зелёные (+ `brand`, `buildRichMessage`,
+Resend-`html`); frontend `build`; `/cheremsha.png` отдаётся 200 image/png.

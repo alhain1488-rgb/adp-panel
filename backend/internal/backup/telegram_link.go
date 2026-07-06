@@ -12,8 +12,14 @@ import (
 	"strings"
 	"time"
 
+	"github.com/adp/panel/internal/brand"
 	"github.com/adp/panel/internal/store"
 )
+
+// withFooter appends the branding plate to a bot message.
+func withFooter(msg string) string {
+	return msg + "\n\n" + brand.TextFooter()
+}
 
 // tgUpdate is the subset of a Telegram update we act on: a text message (we only
 // care about "/start <token>" deep links).
@@ -94,8 +100,9 @@ func (t *Telegram) handleUpdate(ctx context.Context, u tgUpdate, deliver func(co
 	if isConfigRequest(text) {
 		c, err := t.store.GetClientByTelegramChatID(ctx, chatID)
 		if err != nil {
-			_ = t.SendMessageTo(ctx, chatID,
-				"Вы ещё не привязаны. Откройте персональную ссылку, которую дал вам администратор.")
+			_ = t.SendMessageTo(ctx, chatID, withFooter(
+				"Вы ещё не привязаны. Откройте персональную ссылку, которую дал вам администратор. "+
+					"(You're not linked yet. Open the personal link your administrator gave you.)"))
 			return
 		}
 		if deliver != nil {
@@ -117,18 +124,22 @@ func (t *Telegram) handleUpdate(ctx context.Context, u tgUpdate, deliver func(co
 			}
 			return
 		}
-		_ = t.SendMessageTo(ctx, chatID,
-			"Откройте персональную ссылку, которую дал вам администратор, чтобы получать сюда свой VPN-конфиг.")
+		_ = t.SendMessageTo(ctx, chatID, withFooter(
+			"Откройте персональную ссылку, которую дал вам администратор, чтобы получать сюда свой VPN-конфиг. "+
+				"(Open the personal link your administrator gave you to receive your VPN config here.)"))
 		return
 	}
 	c, err := t.store.LinkClientTelegram(ctx, fields[1], chatID, u.Message.From.Username)
 	if err != nil {
-		_ = t.SendMessageTo(ctx, chatID, "Ссылка недействительна. Попросите у администратора новую.")
+		_ = t.SendMessageTo(ctx, chatID, withFooter(
+			"Ссылка недействительна. Попросите у администратора новую. "+
+				"(This link is invalid — ask your administrator for a new one.)"))
 		return
 	}
-	_ = t.SendMessageTo(ctx, chatID, fmt.Sprintf(
-		"✅ Готово, %s! Отправляю ваш конфиг. Чтобы получить его снова — кнопка «%s» ниже или команда /config.",
-		html.EscapeString(c.Name), configButtonLabel))
+	_ = t.SendMessageTo(ctx, chatID, withFooter(fmt.Sprintf(
+		"✅ Готово, %s! Отправляю ваш конфиг. Чтобы получить его снова — кнопка «%s» ниже или команда /config. "+
+			"(Done, %s! Sending your config. To get it again, use the «%s» button below or /config.)",
+		html.EscapeString(c.Name), configButtonLabel, html.EscapeString(c.Name), configButtonLabel)))
 	if deliver != nil {
 		deliver(ctx, c)
 	}

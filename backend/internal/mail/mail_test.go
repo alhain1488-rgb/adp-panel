@@ -69,7 +69,7 @@ func TestSendResend(t *testing.T) {
 	m := &Mailer{httpClient: srv.Client()}
 	cfg := resolved{provider: "resend", from: "panel@example.com", resendKey: "re_test123"}
 	att := Attachment{Filename: "b.adpbak", Data: []byte("bytes")}
-	if err := m.sendResend(context.Background(), cfg, []string{"a@example.com"}, "Subj", "Body", []Attachment{att}); err != nil {
+	if err := m.sendResend(context.Background(), cfg, []string{"a@example.com"}, "Subj", "Body", "<b>Body</b>", []Attachment{att}); err != nil {
 		t.Fatalf("sendResend: %v", err)
 	}
 	if gotAuth != "Bearer re_test123" {
@@ -81,8 +81,46 @@ func TestSendResend(t *testing.T) {
 	if gotBody["from"] != "panel@example.com" || gotBody["subject"] != "Subj" || gotBody["text"] != "Body" {
 		t.Errorf("body = %+v", gotBody)
 	}
+	if gotBody["html"] != "<b>Body</b>" {
+		t.Errorf("html not forwarded: %+v", gotBody["html"])
+	}
 	if _, ok := gotBody["attachments"]; !ok {
 		t.Error("attachment not sent")
+	}
+}
+
+func TestBuildRichMessage_Alternative(t *testing.T) {
+	msg := string(buildRichMessage("panel@example.com", []string{"a@example.com"},
+		"Hi", "plain body", "<p>rich body</p>", nil))
+	for _, want := range []string{
+		"Content-Type: multipart/alternative; boundary=",
+		"Content-Type: text/plain; charset=utf-8",
+		"Content-Type: text/html; charset=utf-8",
+		"plain body",
+		"<p>rich body</p>",
+	} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("rich message missing %q\n---\n%s", want, msg)
+		}
+	}
+}
+
+func TestBuildRichMessage_WithAttachment(t *testing.T) {
+	att := Attachment{Filename: "qr.png", Data: []byte("PNGBYTES"), ContentType: "image/png"}
+	msg := string(buildRichMessage("panel@example.com", []string{"a@example.com"},
+		"Hi", "plain", "<p>rich</p>", []Attachment{att}))
+	for _, want := range []string{
+		"Content-Type: multipart/mixed; boundary=",
+		"Content-Type: multipart/alternative; boundary=",
+		"text/html; charset=utf-8",
+		`Content-Disposition: attachment; filename="qr.png"`,
+	} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("rich+attachment message missing %q", want)
+		}
+	}
+	if strings.Contains(msg, "PNGBYTES") {
+		t.Error("attachment should be base64-encoded")
 	}
 }
 
@@ -98,7 +136,7 @@ func TestSendResend_APIError(t *testing.T) {
 
 	m := &Mailer{httpClient: srv.Client()}
 	cfg := resolved{provider: "resend", from: "x@x.com", resendKey: "re_x"}
-	err := m.sendResend(context.Background(), cfg, []string{"a@b.com"}, "s", "b", nil)
+	err := m.sendResend(context.Background(), cfg, []string{"a@b.com"}, "s", "b", "", nil)
 	if err == nil || !strings.Contains(err.Error(), "domain is not verified") {
 		t.Fatalf("expected API error surfaced, got %v", err)
 	}

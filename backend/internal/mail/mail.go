@@ -264,14 +264,31 @@ type Attachment struct {
 	ContentType string // defaults to application/octet-stream
 }
 
+// Message is an outgoing e-mail. HTML is optional; when set, the message is sent
+// as multipart/alternative (plain text + HTML) so clients that can render HTML
+// see the rich version and others fall back to Text.
+type Message struct {
+	To          []string
+	Subject     string
+	Text        string
+	HTML        string
+	Attachments []Attachment
+}
+
 // Send delivers a plain-text message (with zero or more attachments) to recipients.
 func (m *Mailer) Send(ctx context.Context, to []string, subject, body string, atts ...Attachment) error {
+	return m.SendMessage(ctx, Message{To: to, Subject: subject, Text: body, Attachments: atts})
+}
+
+// SendMessage delivers a message, choosing plain-text or multipart/alternative
+// based on whether HTML is set.
+func (m *Mailer) SendMessage(ctx context.Context, msg Message) error {
 	cfg, err := m.config(ctx)
 	if err != nil {
 		return err
 	}
-	recipients := make([]string, 0, len(to))
-	for _, t := range to {
+	recipients := make([]string, 0, len(msg.To))
+	for _, t := range msg.To {
 		if t = strings.TrimSpace(t); t != "" {
 			recipients = append(recipients, t)
 		}
@@ -281,10 +298,15 @@ func (m *Mailer) Send(ctx context.Context, to []string, subject, body string, at
 	}
 
 	if cfg.provider == "resend" {
-		return m.sendResend(ctx, cfg, recipients, subject, body, atts)
+		return m.sendResend(ctx, cfg, recipients, msg.Subject, msg.Text, msg.HTML, msg.Attachments)
 	}
-	msg := buildMessage(cfg.from, recipients, subject, body, atts)
-	return m.deliver(ctx, cfg, recipients, msg)
+	var raw []byte
+	if msg.HTML != "" {
+		raw = buildRichMessage(cfg.from, recipients, msg.Subject, msg.Text, msg.HTML, msg.Attachments)
+	} else {
+		raw = buildMessage(cfg.from, recipients, msg.Subject, msg.Text, msg.Attachments)
+	}
+	return m.deliver(ctx, cfg, recipients, raw)
 }
 
 // deliver opens the SMTP connection (implicit TLS, STARTTLS or plain), performs
@@ -375,19 +397,79 @@ func buildMessage(from string, to []string, subject, body string, atts []Attachm
 	_, _ = textPart.Write([]byte(normalizeCRLF(body)))
 
 	for _, att := range atts {
-		ct := att.ContentType
-		if ct == "" {
-			ct = "application/octet-stream"
-		}
-		filePart, _ := mw.CreatePart(textproto.MIMEHeader{
-			"Content-Type":              {ct},
-			"Content-Transfer-Encoding": {"base64"},
-			"Content-Disposition":       {fmt.Sprintf("attachment; filename=%q", att.Filename)},
-		})
-		_, _ = filePart.Write(base64Wrap(att.Data))
+		writeAttachment(mw, att)
 	}
 	_ = mw.Close()
 	return b.Bytes()
+}
+
+// buildRichMessage renders a message with both plain-text and HTML bodies
+// (multipart/alternative), optionally wrapped in multipart/mixed when there are
+// attachments.
+func buildRichMessage(from string, to []string, subject, text, htmlBody string, atts []Attachment) []byte {
+	var b bytes.Buffer
+	writeHeader := func(k, v string) { b.WriteString(k + ": " + v + "\r\n") }
+	writeHeader("From", from)
+	writeHeader("To", strings.Join(to, ", "))
+	writeHeader("Subject", mime.QEncoding.Encode("utf-8", subject))
+	writeHeader("MIME-Version", "1.0")
+
+	if len(atts) == 0 {
+		alt := multipart.NewWriter(&b)
+		writeHeader("Content-Type", "multipart/alternative; boundary="+alt.Boundary())
+		b.WriteString("\r\n")
+		writeAlternative(alt, text, htmlBody)
+		_ = alt.Close()
+		return b.Bytes()
+	}
+
+	// Attachments present: multipart/mixed wrapping the alternative body, then files.
+	mixed := multipart.NewWriter(&b)
+	writeHeader("Content-Type", "multipart/mixed; boundary="+mixed.Boundary())
+	b.WriteString("\r\n")
+
+	var altBuf bytes.Buffer
+	alt := multipart.NewWriter(&altBuf)
+	writeAlternative(alt, text, htmlBody)
+	_ = alt.Close()
+	altPart, _ := mixed.CreatePart(textproto.MIMEHeader{
+		"Content-Type": {"multipart/alternative; boundary=" + alt.Boundary()},
+	})
+	_, _ = altPart.Write(altBuf.Bytes())
+
+	for _, att := range atts {
+		writeAttachment(mixed, att)
+	}
+	_ = mixed.Close()
+	return b.Bytes()
+}
+
+// writeAlternative writes the text/plain then text/html parts of an alternative.
+func writeAlternative(alt *multipart.Writer, text, htmlBody string) {
+	tp, _ := alt.CreatePart(textproto.MIMEHeader{
+		"Content-Type":              {"text/plain; charset=utf-8"},
+		"Content-Transfer-Encoding": {"8bit"},
+	})
+	_, _ = tp.Write([]byte(normalizeCRLF(text)))
+	hp, _ := alt.CreatePart(textproto.MIMEHeader{
+		"Content-Type":              {"text/html; charset=utf-8"},
+		"Content-Transfer-Encoding": {"8bit"},
+	})
+	_, _ = hp.Write([]byte(normalizeCRLF(htmlBody)))
+}
+
+// writeAttachment appends one base64 file part to a multipart writer.
+func writeAttachment(mw *multipart.Writer, att Attachment) {
+	ct := att.ContentType
+	if ct == "" {
+		ct = "application/octet-stream"
+	}
+	filePart, _ := mw.CreatePart(textproto.MIMEHeader{
+		"Content-Type":              {ct},
+		"Content-Transfer-Encoding": {"base64"},
+		"Content-Disposition":       {fmt.Sprintf("attachment; filename=%q", att.Filename)},
+	})
+	_, _ = filePart.Write(base64Wrap(att.Data))
 }
 
 // base64Wrap standard-base64-encodes data, wrapped at 76 columns per MIME.
