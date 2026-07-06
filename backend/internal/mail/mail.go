@@ -12,6 +12,7 @@ import (
 	"mime"
 	"mime/multipart"
 	"net"
+	"net/http"
 	"net/smtp"
 	"net/textproto"
 	"strconv"
@@ -22,52 +23,68 @@ import (
 	"github.com/adp/panel/internal/store"
 )
 
-// Settings keys (KV). The SMTP password is encrypted with the panel master key.
+// Settings keys (KV). Secrets are encrypted with the panel master key.
 const (
-	keyEnabled  = "smtp_enabled"
-	keyHost     = "smtp_host"
-	keyPort     = "smtp_port"
-	keyUser     = "smtp_user"
-	keyPassEnc  = "smtp_pass_enc"
-	keyFrom     = "smtp_from"
-	keySecurity = "smtp_security" // "starttls" | "tls" | "none"
+	keyProvider     = "mail_provider" // "smtp" | "resend"
+	keyEnabled      = "smtp_enabled"
+	keyHost         = "smtp_host"
+	keyPort         = "smtp_port"
+	keyUser         = "smtp_user"
+	keyPassEnc      = "smtp_pass_enc"
+	keyFrom         = "smtp_from"
+	keySecurity     = "smtp_security" // "starttls" | "tls" | "none"
+	keyResendKeyEnc = "resend_api_key_enc"
 )
 
 // SecurityModes are the accepted transport-security values.
 var SecurityModes = map[string]bool{"starttls": true, "tls": true, "none": true}
 
+// Providers are the accepted delivery backends. "resend" sends over HTTPS (port
+// 443), which works on hosts whose provider blocks outbound SMTP.
+var Providers = map[string]bool{"smtp": true, "resend": true}
+
 // Status is the safe, secret-free view returned to the UI.
 type Status struct {
-	Enabled     bool   `json:"enabled"`
-	Host        string `json:"host"`
-	Port        int    `json:"port"`
-	Username    string `json:"username"`
-	HasPassword bool   `json:"has_password"`
-	From        string `json:"from"`
-	Security    string `json:"security"`
+	Enabled      bool   `json:"enabled"`
+	Provider     string `json:"provider"`
+	Host         string `json:"host"`
+	Port         int    `json:"port"`
+	Username     string `json:"username"`
+	HasPassword  bool   `json:"has_password"`
+	From         string `json:"from"`
+	Security     string `json:"security"`
+	HasResendKey bool   `json:"has_resend_key"`
 }
 
-// Input updates the config. A blank Password means "keep the stored one".
+// Input updates the config. A blank Password/ResendKey means "keep the stored one".
 type Input struct {
-	Enabled  bool   `json:"enabled"`
-	Host     string `json:"host"`
-	Port     int    `json:"port"`
-	Username string `json:"username"`
-	Password string `json:"password"`
-	From     string `json:"from"`
-	Security string `json:"security"`
+	Enabled   bool   `json:"enabled"`
+	Provider  string `json:"provider"`
+	Host      string `json:"host"`
+	Port      int    `json:"port"`
+	Username  string `json:"username"`
+	Password  string `json:"password"`
+	From      string `json:"from"`
+	Security  string `json:"security"`
+	ResendKey string `json:"resend_key"`
 }
 
-// Mailer sends mail using the persisted SMTP config.
+// Mailer sends mail using the persisted SMTP or Resend config.
 type Mailer struct {
 	store       *store.Store
 	cipher      *crypto.Cipher
 	dialTimeout time.Duration
+	httpClient  *http.Client
 }
 
 // NewMailer builds a Mailer.
 func NewMailer(st *store.Store, cipher *crypto.Cipher) *Mailer {
-	return &Mailer{store: st, cipher: cipher, dialTimeout: 20 * time.Second}
+	return &Mailer{
+		store:       st,
+		cipher:      cipher,
+		dialTimeout: 20 * time.Second,
+		httpClient:  &http.Client{Timeout: 30 * time.Second},
+	}
 }
 
 // Status returns the config without exposing the password.
@@ -101,14 +118,24 @@ func (m *Mailer) Status(ctx context.Context) (Status, error) {
 	if err != nil {
 		return Status{}, err
 	}
+	provider, err := get(keyProvider)
+	if err != nil {
+		return Status{}, err
+	}
+	resendEnc, err := get(keyResendKeyEnc)
+	if err != nil {
+		return Status{}, err
+	}
 	return Status{
-		Enabled:     enabled == "1",
-		Host:        host,
-		Port:        parsePort(port),
-		Username:    user,
-		HasPassword: passEnc != "",
-		From:        from,
-		Security:    normalizeSecurity(security),
+		Enabled:      enabled == "1",
+		Provider:     normalizeProvider(provider),
+		Host:         host,
+		Port:         parsePort(port),
+		Username:     user,
+		HasPassword:  passEnc != "",
+		From:         from,
+		Security:     normalizeSecurity(security),
+		HasResendKey: resendEnc != "",
 	}, nil
 }
 
@@ -121,6 +148,9 @@ func (m *Mailer) SetConfig(ctx context.Context, in Input) error {
 			return err
 		}
 	} else if err := set(keyEnabled, ""); err != nil {
+		return err
+	}
+	if err := set(keyProvider, normalizeProvider(in.Provider)); err != nil {
 		return err
 	}
 	if err := set(keyHost, strings.TrimSpace(in.Host)); err != nil {
@@ -147,22 +177,36 @@ func (m *Mailer) SetConfig(ctx context.Context, in Input) error {
 			return err
 		}
 	}
+	if in.ResendKey != "" {
+		enc, err := m.cipher.Encrypt(strings.TrimSpace(in.ResendKey))
+		if err != nil {
+			return err
+		}
+		if err := set(keyResendKeyEnc, enc); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
-// Configured reports whether mail can be sent (enabled + host + from present).
+// Configured reports whether mail can be sent with the current provider.
 func (m *Mailer) Configured(ctx context.Context) bool {
 	st, err := m.Status(ctx)
-	if err != nil {
+	if err != nil || !st.Enabled || st.From == "" {
 		return false
 	}
-	return st.Enabled && st.Host != "" && st.From != ""
+	if st.Provider == "resend" {
+		return st.HasResendKey
+	}
+	return st.Host != ""
 }
 
-// resolved is the SMTP config with the password decrypted.
+// resolved is the delivery config with secrets decrypted.
 type resolved struct {
+	provider                         string
 	host, from, user, pass, security string
 	port                             int
+	resendKey                        string
 	enabled                          bool
 }
 
@@ -172,15 +216,32 @@ func (m *Mailer) config(ctx context.Context) (resolved, error) {
 		return resolved{}, err
 	}
 	if !st.Enabled {
-		return resolved{}, fmt.Errorf("mail: SMTP is not enabled")
+		return resolved{}, fmt.Errorf("mail: e-mail sending is not enabled")
 	}
-	if st.Host == "" || st.From == "" {
-		return resolved{}, fmt.Errorf("mail: set the SMTP host and From address first")
+	if st.From == "" {
+		return resolved{}, fmt.Errorf("mail: set the From address first")
 	}
-	r := resolved{
-		host: st.Host, from: st.From, user: st.Username,
-		port: st.Port, security: st.Security, enabled: true,
+	r := resolved{provider: st.Provider, from: st.From, enabled: true}
+
+	if st.Provider == "resend" {
+		enc, err := m.store.GetSetting(ctx, keyResendKeyEnc)
+		if err != nil {
+			return resolved{}, err
+		}
+		if enc == "" {
+			return resolved{}, fmt.Errorf("mail: set the Resend API key first")
+		}
+		if r.resendKey, err = m.cipher.Decrypt(enc); err != nil {
+			return resolved{}, err
+		}
+		return r, nil
 	}
+
+	// SMTP
+	if st.Host == "" {
+		return resolved{}, fmt.Errorf("mail: set the SMTP host first")
+	}
+	r.host, r.user, r.port, r.security = st.Host, st.Username, st.Port, st.Security
 	if r.port == 0 {
 		r.port = defaultPort(r.security)
 	}
@@ -219,6 +280,9 @@ func (m *Mailer) Send(ctx context.Context, to []string, subject, body string, at
 		return fmt.Errorf("mail: no recipient")
 	}
 
+	if cfg.provider == "resend" {
+		return m.sendResend(ctx, cfg, recipients, subject, body, att)
+	}
 	msg := buildMessage(cfg.from, recipients, subject, body, att)
 	return m.deliver(ctx, cfg, recipients, msg)
 }
@@ -346,6 +410,14 @@ func normalizeSecurity(s string) string {
 	s = strings.ToLower(strings.TrimSpace(s))
 	if !SecurityModes[s] {
 		return "starttls"
+	}
+	return s
+}
+
+func normalizeProvider(s string) string {
+	s = strings.ToLower(strings.TrimSpace(s))
+	if !Providers[s] {
+		return "smtp"
 	}
 	return s
 }

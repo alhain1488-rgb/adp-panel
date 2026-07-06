@@ -1,6 +1,11 @@
 package mail
 
 import (
+	"context"
+	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 )
@@ -41,6 +46,61 @@ func TestBuildMessage_WithAttachment(t *testing.T) {
 	// The raw secret bytes must be base64-encoded, not present verbatim.
 	if strings.Contains(msg, "SECRETBYTES") {
 		t.Error("attachment payload should be base64-encoded, not raw")
+	}
+}
+
+func TestSendResend(t *testing.T) {
+	var gotAuth, gotCT string
+	var gotBody map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAuth = r.Header.Get("Authorization")
+		gotCT = r.Header.Get("Content-Type")
+		b, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(b, &gotBody)
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"id":"abc"}`))
+	}))
+	defer srv.Close()
+
+	old := resendEndpoint
+	resendEndpoint = srv.URL
+	defer func() { resendEndpoint = old }()
+
+	m := &Mailer{httpClient: srv.Client()}
+	cfg := resolved{provider: "resend", from: "panel@example.com", resendKey: "re_test123"}
+	att := &Attachment{Filename: "b.adpbak", Data: []byte("bytes")}
+	if err := m.sendResend(context.Background(), cfg, []string{"a@example.com"}, "Subj", "Body", att); err != nil {
+		t.Fatalf("sendResend: %v", err)
+	}
+	if gotAuth != "Bearer re_test123" {
+		t.Errorf("auth = %q", gotAuth)
+	}
+	if gotCT != "application/json" {
+		t.Errorf("content-type = %q", gotCT)
+	}
+	if gotBody["from"] != "panel@example.com" || gotBody["subject"] != "Subj" || gotBody["text"] != "Body" {
+		t.Errorf("body = %+v", gotBody)
+	}
+	if _, ok := gotBody["attachments"]; !ok {
+		t.Error("attachment not sent")
+	}
+}
+
+func TestSendResend_APIError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		_, _ = w.Write([]byte(`{"message":"domain is not verified","name":"validation_error"}`))
+	}))
+	defer srv.Close()
+	old := resendEndpoint
+	resendEndpoint = srv.URL
+	defer func() { resendEndpoint = old }()
+
+	m := &Mailer{httpClient: srv.Client()}
+	cfg := resolved{provider: "resend", from: "x@x.com", resendKey: "re_x"}
+	err := m.sendResend(context.Background(), cfg, []string{"a@b.com"}, "s", "b", nil)
+	if err == nil || !strings.Contains(err.Error(), "domain is not verified") {
+		t.Fatalf("expected API error surfaced, got %v", err)
 	}
 }
 

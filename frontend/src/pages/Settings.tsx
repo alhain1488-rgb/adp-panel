@@ -680,18 +680,20 @@ function SmtpCard() {
   const t = useT()
 
   const [form, setForm] = useState<MailInput>({
-    enabled: false, host: '', port: 587, username: '', password: '', from: '', security: 'starttls',
+    enabled: false, provider: 'smtp', host: '', port: 587, username: '', password: '', from: '', security: 'starttls', resend_key: '',
   })
   const [testTo, setTestTo] = useState('')
 
   useEffect(() => {
     if (data) {
       setForm({
-        enabled: data.enabled, host: data.host, port: data.port || 587, username: data.username,
-        password: '', from: data.from, security: data.security,
+        enabled: data.enabled, provider: data.provider || 'smtp', host: data.host, port: data.port || 587,
+        username: data.username, password: '', from: data.from, security: data.security, resend_key: '',
       })
     }
   }, [data])
+
+  const isResend = form.provider === 'resend'
 
   function save() {
     update.mutate(form, {
@@ -745,49 +747,76 @@ function SmtpCard() {
           <Switch checked={form.enabled} onCheckedChange={(v) => setForm((f) => ({ ...f, enabled: v }))} />
         </div>
 
-        <div className="grid gap-4 sm:grid-cols-[2fr_1fr]">
-          <div className="space-y-2">
-            <Label htmlFor="smtp-host">{t('settings.smtp.host')}</Label>
-            <Input id="smtp-host" placeholder="smtp.gmail.com" value={form.host}
-              onChange={(e) => setForm((f) => ({ ...f, host: e.target.value }))} />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="smtp-port">{t('settings.smtp.port')}</Label>
-            <Input id="smtp-port" type="number" min={1} value={form.port}
-              onChange={(e) => setForm((f) => ({ ...f, port: Number(e.target.value) || 0 }))} />
-          </div>
-        </div>
-
         <div className="space-y-2">
-          <Label htmlFor="smtp-security">{t('settings.smtp.security')}</Label>
-          <select id="smtp-security" value={form.security}
-            onChange={(e) => setForm((f) => ({ ...f, security: e.target.value as MailInput['security'] }))}
+          <Label htmlFor="mail-provider">{t('settings.smtp.provider')}</Label>
+          <select id="mail-provider" value={form.provider}
+            onChange={(e) => setForm((f) => ({ ...f, provider: e.target.value as MailInput['provider'] }))}
             className="flex h-9 w-full cursor-pointer rounded-md border border-input bg-background px-3 py-1 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-            <option value="starttls">STARTTLS (587)</option>
-            <option value="tls">TLS (465)</option>
-            <option value="none">{t('settings.smtp.securityNone')}</option>
+            <option value="resend">Resend (HTTPS API)</option>
+            <option value="smtp">SMTP</option>
           </select>
+          <p className="text-xs text-muted-foreground">
+            {isResend ? t('settings.smtp.providerResendHint') : t('settings.smtp.providerSmtpHint')}
+          </p>
         </div>
 
-        <div className="grid gap-4 sm:grid-cols-2">
+        {isResend ? (
           <div className="space-y-2">
-            <Label htmlFor="smtp-user">{t('settings.smtp.username')}</Label>
-            <Input id="smtp-user" autoComplete="off" placeholder="you@gmail.com" value={form.username}
-              onChange={(e) => setForm((f) => ({ ...f, username: e.target.value }))} />
+            <Label htmlFor="resend-key">{t('settings.smtp.resendKey')}</Label>
+            <Input id="resend-key" type="password" autoComplete="off"
+              placeholder={data?.has_resend_key ? t('settings.telegram.storedPlaceholder') : 're_…'}
+              value={form.resend_key} onChange={(e) => setForm((f) => ({ ...f, resend_key: e.target.value }))} />
+            <p className="text-xs text-muted-foreground">{t('settings.smtp.resendKeyHint')}</p>
           </div>
-          <div className="space-y-2">
-            <Label htmlFor="smtp-pass">{t('settings.smtp.password')}</Label>
-            <Input id="smtp-pass" type="password" autoComplete="off"
-              placeholder={data?.has_password ? t('settings.telegram.storedPlaceholder') : '••••••••'}
-              value={form.password} onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))} />
-          </div>
-        </div>
+        ) : (
+          <>
+            <div className="grid gap-4 sm:grid-cols-[2fr_1fr]">
+              <div className="space-y-2">
+                <Label htmlFor="smtp-host">{t('settings.smtp.host')}</Label>
+                <Input id="smtp-host" placeholder="smtp.gmail.com" value={form.host}
+                  onChange={(e) => setForm((f) => ({ ...f, host: e.target.value }))} />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="smtp-port">{t('settings.smtp.port')}</Label>
+                <Input id="smtp-port" type="number" min={1} value={form.port}
+                  onChange={(e) => setForm((f) => ({ ...f, port: Number(e.target.value) || 0 }))} />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="smtp-security">{t('settings.smtp.security')}</Label>
+              <select id="smtp-security" value={form.security}
+                onChange={(e) => setForm((f) => ({ ...f, security: e.target.value as MailInput['security'] }))}
+                className="flex h-9 w-full cursor-pointer rounded-md border border-input bg-background px-3 py-1 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                <option value="starttls">STARTTLS (587)</option>
+                <option value="tls">TLS (465)</option>
+                <option value="none">{t('settings.smtp.securityNone')}</option>
+              </select>
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="smtp-user">{t('settings.smtp.username')}</Label>
+                <Input id="smtp-user" autoComplete="off" placeholder="you@gmail.com" value={form.username}
+                  onChange={(e) => setForm((f) => ({ ...f, username: e.target.value }))} />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="smtp-pass">{t('settings.smtp.password')}</Label>
+                <Input id="smtp-pass" type="password" autoComplete="off"
+                  placeholder={data?.has_password ? t('settings.telegram.storedPlaceholder') : '••••••••'}
+                  value={form.password} onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))} />
+              </div>
+            </div>
+          </>
+        )}
 
         <div className="space-y-2">
           <Label htmlFor="smtp-from">{t('settings.smtp.from')}</Label>
-          <Input id="smtp-from" placeholder="ADP Panel <you@gmail.com>" value={form.from}
+          <Input id="smtp-from" placeholder="ADP Panel <onboarding@resend.dev>" value={form.from}
             onChange={(e) => setForm((f) => ({ ...f, from: e.target.value }))} />
-          <p className="text-xs text-muted-foreground">{t('settings.smtp.fromHint')}</p>
+          <p className="text-xs text-muted-foreground">
+            {isResend ? t('settings.smtp.fromResendHint') : t('settings.smtp.fromHint')}
+          </p>
         </div>
 
         <div className="flex flex-col gap-2 rounded-lg border bg-muted/40 p-3 sm:flex-row sm:items-end">

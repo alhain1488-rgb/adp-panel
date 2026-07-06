@@ -120,24 +120,30 @@ export function useRunTelegramBackup() {
 
 // ---- SMTP (e-mail) settings ----
 
+export type MailProvider = 'smtp' | 'resend'
+
 export interface MailStatus {
   enabled: boolean
+  provider: MailProvider
   host: string
   port: number
   username: string
   has_password: boolean
   from: string
   security: 'starttls' | 'tls' | 'none'
+  has_resend_key: boolean
 }
 
 export interface MailInput {
   enabled: boolean
+  provider: MailProvider
   host: string
   port: number
   username: string
   password: string // blank = keep the stored one
   from: string
   security: 'starttls' | 'tls' | 'none'
+  resend_key: string // blank = keep the stored one
 }
 
 const MAIL_KEY = ['mail']

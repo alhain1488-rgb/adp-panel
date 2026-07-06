@@ -102,12 +102,18 @@ const telegramBackup = {
 // Mutable mock state for the SMTP config and e-mail auto-backup.
 const mailConfig = {
   enabled: false,
+  provider: 'resend' as 'smtp' | 'resend',
   host: '',
   port: 587,
   username: '',
   has_password: false,
   from: '',
   security: 'starttls' as 'starttls' | 'tls' | 'none',
+  has_resend_key: false,
+}
+function mailReady() {
+  if (!mailConfig.enabled || !mailConfig.from) return false
+  return mailConfig.provider === 'resend' ? mailConfig.has_resend_key : !!mailConfig.host
 }
 const emailBackup = {
   enabled: false,
@@ -620,21 +626,21 @@ export const handlers = [
     if (!requireAuth(request)) return unauthorized()
     const input = (await request.json()) as any
     mailConfig.enabled = !!input.enabled
+    mailConfig.provider = input.provider ?? 'resend'
     mailConfig.host = input.host ?? ''
     mailConfig.port = input.port || 587
     mailConfig.username = input.username ?? ''
     mailConfig.from = input.from ?? ''
     mailConfig.security = input.security ?? 'starttls'
     if (input.password) mailConfig.has_password = true
-    emailBackup.smtp_ready = mailConfig.enabled && !!mailConfig.host && !!mailConfig.from
+    if (input.resend_key) mailConfig.has_resend_key = true
+    emailBackup.smtp_ready = mailReady()
     return json(mailConfig)
   }),
   http.post('/api/mail/test', async ({ request }) => {
     if (!requireAuth(request)) return unauthorized()
     const input = (await request.json()) as any
-    if (!mailConfig.enabled || !mailConfig.host || !mailConfig.from) {
-      return json({ error: 'SMTP is not configured' }, { status: 502 })
-    }
+    if (!mailReady()) return json({ error: 'e-mail is not configured' }, { status: 502 })
     if (!input?.to) return json({ error: 'a recipient address is required' }, { status: 400 })
     return json({ ok: true })
   }),
@@ -642,7 +648,7 @@ export const handlers = [
   // ---- E-mail auto-backup ----
   http.get('/api/backup/email', ({ request }) => {
     if (!requireAuth(request)) return unauthorized()
-    emailBackup.smtp_ready = mailConfig.enabled && !!mailConfig.host && !!mailConfig.from
+    emailBackup.smtp_ready = mailReady()
     return json(emailBackup)
   }),
   http.put('/api/backup/email', async ({ request }) => {
@@ -652,7 +658,7 @@ export const handlers = [
     emailBackup.to = input.to ?? ''
     emailBackup.interval_hours = input.interval_hours || 24
     if (input.passphrase) emailBackup.has_passphrase = true
-    emailBackup.smtp_ready = mailConfig.enabled && !!mailConfig.host && !!mailConfig.from
+    emailBackup.smtp_ready = mailReady()
     return json(emailBackup)
   }),
   http.post('/api/backup/email/run', ({ request }) => {
@@ -670,8 +676,8 @@ export const handlers = [
   // ---- Client subscription e-mail ----
   http.post('/api/clients/:id/email', ({ request }) => {
     if (!requireAuth(request)) return unauthorized()
-    if (!(mailConfig.enabled && mailConfig.host && mailConfig.from)) {
-      return json({ error: 'SMTP is not configured; set it up in Settings' }, { status: 400 })
+    if (!mailReady()) {
+      return json({ error: 'e-mail is not configured; set it up in Settings' }, { status: 400 })
     }
     return json({ ok: true })
   }),
