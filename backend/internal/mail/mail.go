@@ -264,8 +264,8 @@ type Attachment struct {
 	ContentType string // defaults to application/octet-stream
 }
 
-// Send delivers a plain-text message (with an optional attachment) to recipients.
-func (m *Mailer) Send(ctx context.Context, to []string, subject, body string, att *Attachment) error {
+// Send delivers a plain-text message (with zero or more attachments) to recipients.
+func (m *Mailer) Send(ctx context.Context, to []string, subject, body string, atts ...Attachment) error {
 	cfg, err := m.config(ctx)
 	if err != nil {
 		return err
@@ -281,9 +281,9 @@ func (m *Mailer) Send(ctx context.Context, to []string, subject, body string, at
 	}
 
 	if cfg.provider == "resend" {
-		return m.sendResend(ctx, cfg, recipients, subject, body, att)
+		return m.sendResend(ctx, cfg, recipients, subject, body, atts)
 	}
-	msg := buildMessage(cfg.from, recipients, subject, body, att)
+	msg := buildMessage(cfg.from, recipients, subject, body, atts)
 	return m.deliver(ctx, cfg, recipients, msg)
 }
 
@@ -348,8 +348,8 @@ func (m *Mailer) deliver(ctx context.Context, cfg resolved, to []string, msg []b
 }
 
 // buildMessage renders an RFC 5322 message: a text/plain body, optionally wrapped
-// in multipart/mixed with a base64 attachment.
-func buildMessage(from string, to []string, subject, body string, att *Attachment) []byte {
+// in multipart/mixed with base64 attachments.
+func buildMessage(from string, to []string, subject, body string, atts []Attachment) []byte {
 	var b bytes.Buffer
 	writeHeader := func(k, v string) { b.WriteString(k + ": " + v + "\r\n") }
 	writeHeader("From", from)
@@ -357,7 +357,7 @@ func buildMessage(from string, to []string, subject, body string, att *Attachmen
 	writeHeader("Subject", mime.QEncoding.Encode("utf-8", subject))
 	writeHeader("MIME-Version", "1.0")
 
-	if att == nil {
+	if len(atts) == 0 {
 		writeHeader("Content-Type", "text/plain; charset=utf-8")
 		b.WriteString("\r\n")
 		b.WriteString(normalizeCRLF(body))
@@ -374,16 +374,18 @@ func buildMessage(from string, to []string, subject, body string, att *Attachmen
 	})
 	_, _ = textPart.Write([]byte(normalizeCRLF(body)))
 
-	ct := att.ContentType
-	if ct == "" {
-		ct = "application/octet-stream"
+	for _, att := range atts {
+		ct := att.ContentType
+		if ct == "" {
+			ct = "application/octet-stream"
+		}
+		filePart, _ := mw.CreatePart(textproto.MIMEHeader{
+			"Content-Type":              {ct},
+			"Content-Transfer-Encoding": {"base64"},
+			"Content-Disposition":       {fmt.Sprintf("attachment; filename=%q", att.Filename)},
+		})
+		_, _ = filePart.Write(base64Wrap(att.Data))
 	}
-	filePart, _ := mw.CreatePart(textproto.MIMEHeader{
-		"Content-Type":              {ct},
-		"Content-Transfer-Encoding": {"base64"},
-		"Content-Disposition":       {fmt.Sprintf("attachment; filename=%q", att.Filename)},
-	})
-	_, _ = filePart.Write(base64Wrap(att.Data))
 	_ = mw.Close()
 	return b.Bytes()
 }

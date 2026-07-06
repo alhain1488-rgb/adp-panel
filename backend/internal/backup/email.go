@@ -156,7 +156,7 @@ func (e *Email) RunNow(ctx context.Context) error {
 		"Encrypted ADP panel backup attached (%s).\n\n"+
 			"Restore it from Settings → Backup → Import, using the passphrase you set for e-mail backups.\n",
 		stamp)
-	att := &mail.Attachment{Filename: filename, Data: data, ContentType: "application/octet-stream"}
+	att := mail.Attachment{Filename: filename, Data: data, ContentType: "application/octet-stream"}
 	if err := e.mailer.Send(ctx, []string{to}, subject, body, att); err != nil {
 		e.recordResult(ctx, err)
 		return err

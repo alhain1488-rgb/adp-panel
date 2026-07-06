@@ -150,10 +150,11 @@ func Router(d Deps) http.Handler {
 			r.Delete("/", ih.del)
 		})
 
-		ch := &clientsHandler{svc: d.Clients, store: d.Store, subBase: d.SubBaseURL, sync: d.Sync, mailer: d.Mail}
+		ch := &clientsHandler{svc: d.Clients, store: d.Store, subBase: d.SubBaseURL, sync: d.Sync, mailer: d.Mail, telegram: d.Telegram, emailBackup: d.EmailBackup}
 		r.Route("/api/clients", func(r chi.Router) {
 			r.Get("/", ch.list)
 			r.Post("/", ch.create)
+			r.Post("/send-configs", ch.sendConfigs)
 			r.Route("/{id}", func(r chi.Router) {
 				r.Get("/", ch.get)
 				r.Put("/", ch.update)

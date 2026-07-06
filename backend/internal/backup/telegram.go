@@ -325,3 +325,101 @@ func sendDocument(ctx context.Context, client *http.Client, apiBase, token, chat
 	}
 	return nil
 }
+
+// CanSend reports whether the bot token and chat id are configured (a passphrase
+// is only needed for backups, not for arbitrary messages).
+func (t *Telegram) CanSend(ctx context.Context) bool {
+	tokenEnc, _ := t.store.GetSetting(ctx, keyTgTokenEnc)
+	chat, _ := t.store.GetSetting(ctx, keyTgChat)
+	return tokenEnc != "" && chat != ""
+}
+
+// botChat returns the decrypted bot token and chat id.
+func (t *Telegram) botChat(ctx context.Context) (token, chat string, err error) {
+	tokenEnc, err := t.store.GetSetting(ctx, keyTgTokenEnc)
+	if err != nil {
+		return "", "", err
+	}
+	chat, err = t.store.GetSetting(ctx, keyTgChat)
+	if err != nil {
+		return "", "", err
+	}
+	if tokenEnc == "" || chat == "" {
+		return "", "", fmt.Errorf("telegram: set the bot token and chat id first")
+	}
+	token, err = t.cipher.Decrypt(tokenEnc)
+	return token, chat, err
+}
+
+// SendMessage sends an HTML-formatted text message to the configured chat.
+// Wrapping text in <code>…</code> makes Telegram copy it to the clipboard on tap.
+func (t *Telegram) SendMessage(ctx context.Context, html string) error {
+	token, chat, err := t.botChat(ctx)
+	if err != nil {
+		return err
+	}
+	body, _ := json.Marshal(map[string]any{
+		"chat_id": chat, "text": html, "parse_mode": "HTML", "disable_web_page_preview": true,
+	})
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
+		fmt.Sprintf("%s/bot%s/sendMessage", t.apiBase, token), bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	return tgDo(t.client, req)
+}
+
+// SendPhoto sends a photo (e.g. a QR PNG) with an HTML caption to the chat.
+func (t *Telegram) SendPhoto(ctx context.Context, filename string, photo []byte, htmlCaption string) error {
+	token, chat, err := t.botChat(ctx)
+	if err != nil {
+		return err
+	}
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+	_ = mw.WriteField("chat_id", chat)
+	if htmlCaption != "" {
+		_ = mw.WriteField("caption", htmlCaption)
+		_ = mw.WriteField("parse_mode", "HTML")
+	}
+	fw, err := mw.CreateFormFile("photo", filename)
+	if err != nil {
+		return err
+	}
+	if _, err := fw.Write(photo); err != nil {
+		return err
+	}
+	if err := mw.Close(); err != nil {
+		return err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
+		fmt.Sprintf("%s/bot%s/sendPhoto", t.apiBase, token), &buf)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	return tgDo(t.client, req)
+}
+
+// tgDo runs a Bot API request and surfaces the {ok,description} result.
+func tgDo(client *http.Client, req *http.Request) error {
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("telegram: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	var out struct {
+		OK          bool   `json:"ok"`
+		Description string `json:"description"`
+	}
+	_ = json.Unmarshal(body, &out)
+	if !out.OK {
+		if out.Description != "" {
+			return fmt.Errorf("telegram: %s", out.Description)
+		}
+		return fmt.Errorf("telegram: request failed (HTTP %d)", resp.StatusCode)
+	}
+	return nil
+}

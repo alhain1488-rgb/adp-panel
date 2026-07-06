@@ -67,7 +67,7 @@ func (h *mailHandler) test(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	body := "This is a test message from your ADP panel. If you received it, SMTP is working.\n"
-	if err := h.mailer.Send(r.Context(), []string{in.To}, "ADP panel — SMTP test", body, nil); err != nil {
+	if err := h.mailer.Send(r.Context(), []string{in.To}, "ADP panel — SMTP test", body); err != nil {
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
 	}

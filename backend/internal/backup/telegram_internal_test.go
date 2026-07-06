@@ -38,6 +38,45 @@ func newTelegramForTest(t *testing.T, apiBase string) *Telegram {
 	return tg
 }
 
+func TestTelegramSendMessageAndPhoto(t *testing.T) {
+	ctx := context.Background()
+	var paths []string
+	var msgBody string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.URL.Path)
+		if strings.HasSuffix(r.URL.Path, "/sendMessage") {
+			b, _ := io.ReadAll(r.Body)
+			msgBody = string(b)
+		}
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	defer srv.Close()
+
+	tg := newTelegramForTest(t, srv.URL)
+	if tg.CanSend(ctx) {
+		t.Fatal("CanSend should be false before config")
+	}
+	if err := tg.SetConfig(ctx, TelegramInput{Enabled: true, Token: "BOT:TOKEN", ChatID: "42", Passphrase: "passphrase12", IntervalHours: 6}); err != nil {
+		t.Fatal(err)
+	}
+	if !tg.CanSend(ctx) {
+		t.Fatal("CanSend should be true after config")
+	}
+	if err := tg.SendMessage(ctx, "<code>https://x/sub/tok</code>"); err != nil {
+		t.Fatalf("SendMessage: %v", err)
+	}
+	if !strings.Contains(msgBody, `"parse_mode":"HTML"`) || !strings.Contains(msgBody, "code") {
+		t.Errorf("sendMessage body missing HTML parse_mode/code: %s", msgBody)
+	}
+	if err := tg.SendPhoto(ctx, "c.png", []byte{1, 2, 3}, "<b>c</b>"); err != nil {
+		t.Fatalf("SendPhoto: %v", err)
+	}
+	joined := strings.Join(paths, ",")
+	if !strings.Contains(joined, "/sendMessage") || !strings.Contains(joined, "/sendPhoto") {
+		t.Errorf("expected sendMessage + sendPhoto calls, got %s", joined)
+	}
+}
+
 func TestTelegramConfigRoundTripKeepsSecrets(t *testing.T) {
 	ctx := context.Background()
 	tg := newTelegramForTest(t, "https://example.invalid")

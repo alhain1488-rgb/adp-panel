@@ -215,6 +215,21 @@ export function useSendClientEmail(id: number) {
     mutationFn: () => api.post<{ ok: boolean }>(`/api/clients/${id}/email`),
   })
 }
+export interface SendConfigsResult {
+  total: number
+  email_configured: boolean
+  telegram_configured: boolean
+  email_sent?: boolean
+  email_to?: string
+  email_error?: string
+  telegram_sent?: number
+  telegram_failed?: number
+}
+export function useSendConfigs() {
+  return useMutation({
+    mutationFn: () => api.post<SendConfigsResult>('/api/clients/send-configs'),
+  })
+}
 export function useToggleClient(id: number) {
   const qc = useQueryClient()
   return useMutation({

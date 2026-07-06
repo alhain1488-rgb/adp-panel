@@ -30,8 +30,8 @@ func TestBuildMessage_PlainText(t *testing.T) {
 }
 
 func TestBuildMessage_WithAttachment(t *testing.T) {
-	att := &Attachment{Filename: "backup.adpbak", Data: []byte("SECRETBYTES"), ContentType: "application/octet-stream"}
-	msg := string(buildMessage("panel@example.com", []string{"a@example.com"}, "Backup", "see attached", att))
+	att := Attachment{Filename: "backup.adpbak", Data: []byte("SECRETBYTES"), ContentType: "application/octet-stream"}
+	msg := string(buildMessage("panel@example.com", []string{"a@example.com"}, "Backup", "see attached", []Attachment{att}))
 	for _, want := range []string{
 		"Content-Type: multipart/mixed; boundary=",
 		"Content-Type: text/plain; charset=utf-8",
@@ -68,8 +68,8 @@ func TestSendResend(t *testing.T) {
 
 	m := &Mailer{httpClient: srv.Client()}
 	cfg := resolved{provider: "resend", from: "panel@example.com", resendKey: "re_test123"}
-	att := &Attachment{Filename: "b.adpbak", Data: []byte("bytes")}
-	if err := m.sendResend(context.Background(), cfg, []string{"a@example.com"}, "Subj", "Body", att); err != nil {
+	att := Attachment{Filename: "b.adpbak", Data: []byte("bytes")}
+	if err := m.sendResend(context.Background(), cfg, []string{"a@example.com"}, "Subj", "Body", []Attachment{att}); err != nil {
 		t.Fatalf("sendResend: %v", err)
 	}
 	if gotAuth != "Bearer re_test123" {

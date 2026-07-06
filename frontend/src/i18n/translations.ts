@@ -426,4 +426,10 @@ export const dict: Record<string, { en: string; ru: string }> = {
   "settings.smtp.resendKey": { en: "Resend API key", ru: "API-ключ Resend" },
   "settings.smtp.resendKeyHint": { en: "Stored encrypted at rest. Starts with \"re_\".", ru: "Хранится в зашифрованном виде. Начинается с «re_»." },
   "settings.smtp.fromResendHint": { en: "Must be a Resend-verified domain, or use \"onboarding@resend.dev\" to test to your own account e-mail.", ru: "Должен быть домен, подтверждённый в Resend, либо «onboarding@resend.dev» для теста на почту вашего аккаунта." },
+  "clients.sendConfigs.button": { en: "Send configs", ru: "Отправить конфиги" },
+  "clients.sendConfigs.done": { en: "Sent configs for {n} clients", ru: "Отправлены конфиги по {n} клиентам" },
+  "clients.sendConfigs.emailOk": { en: "e-mail → {to}", ru: "почта → {to}" },
+  "clients.sendConfigs.emailErr": { en: "e-mail failed: {err}", ru: "почта не ушла: {err}" },
+  "clients.sendConfigs.tgOk": { en: "Telegram: {n} messages", ru: "Telegram: сообщений {n}" },
+  "clients.sendConfigs.failed": { en: "Could not send configs", ru: "Не удалось отправить конфиги" },
 }

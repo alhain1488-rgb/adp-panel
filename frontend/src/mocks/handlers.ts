@@ -681,4 +681,19 @@ export const handlers = [
     }
     return json({ ok: true })
   }),
+  http.post('/api/clients/send-configs', ({ request }) => {
+    if (!requireAuth(request)) return unauthorized()
+    const tgOK = telegramBackup.has_token && !!telegramBackup.chat_id
+    if (!mailReady() && !tgOK) {
+      return json({ error: 'set up Telegram or e-mail first (Settings → Backup)' }, { status: 400 })
+    }
+    const total = clients.length
+    const res: Record<string, unknown> = { total, email_configured: mailReady(), telegram_configured: tgOK }
+    if (mailReady()) {
+      res.email_sent = true
+      res.email_to = emailBackup.to || mailConfig.from
+    }
+    if (tgOK) res.telegram_sent = total
+    return json(res)
+  }),
 ]

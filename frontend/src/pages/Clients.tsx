@@ -12,6 +12,7 @@ import {
   ListFilter,
   EthernetPort,
   Clock,
+  Send,
 } from 'lucide-react'
 import { PageHeader } from '@/components/common/page-header'
 import { EmptyState } from '@/components/common/misc'
@@ -45,6 +46,7 @@ import {
   useCreateClient,
   useDeleteClient,
   useRotateToken,
+  useSendConfigs,
   useToggleClient,
 } from '@/api/hooks'
 import type { Client } from '@/api/types'
@@ -373,10 +375,37 @@ export default function ClientsPage() {
   const { data: clients, isLoading } = useClients()
   const [createOpen, setCreateOpen] = useState(false)
   const t = useT()
+  const { toast } = useToast()
+  const sendConfigs = useSendConfigs()
+
+  function handleSendConfigs() {
+    sendConfigs.mutate(undefined, {
+      onSuccess: (res) => {
+        const parts: string[] = []
+        if (res.email_sent) parts.push(t('clients.sendConfigs.emailOk', { to: res.email_to ?? '' }))
+        else if (res.email_error) parts.push(t('clients.sendConfigs.emailErr', { err: res.email_error }))
+        if (typeof res.telegram_sent === 'number') parts.push(t('clients.sendConfigs.tgOk', { n: res.telegram_sent }))
+        toast({
+          title: t('clients.sendConfigs.done', { n: res.total }),
+          description: parts.join(' · ') || undefined,
+        })
+      },
+      onError: (e) =>
+        toast({
+          variant: 'destructive',
+          title: t('clients.sendConfigs.failed'),
+          description: e instanceof Error ? e.message : undefined,
+        }),
+    })
+  }
 
   return (
     <div>
       <PageHeader title={t('clients.title')} description={t('clients.subtitle')}>
+        <Button variant="outline" onClick={handleSendConfigs} disabled={sendConfigs.isPending}>
+          {sendConfigs.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+          {t('clients.sendConfigs.button')}
+        </Button>
         <Button onClick={() => setCreateOpen(true)}>
           <Plus className="h-4 w-4" />
           {t('clients.add')}

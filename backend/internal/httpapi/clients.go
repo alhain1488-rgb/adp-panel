@@ -3,6 +3,8 @@ package httpapi
 import (
 	"context"
 	"errors"
+	"fmt"
+	"html"
 	"net/http"
 	"strconv"
 	"strings"
@@ -10,6 +12,7 @@ import (
 	skipqr "github.com/skip2/go-qrcode"
 
 	"github.com/adp/panel/internal/auth"
+	"github.com/adp/panel/internal/backup"
 	"github.com/adp/panel/internal/clients"
 	"github.com/adp/panel/internal/mail"
 	"github.com/adp/panel/internal/store"
@@ -17,11 +20,13 @@ import (
 )
 
 type clientsHandler struct {
-	svc     *clients.Service
-	store   *store.Store
-	subBase string
-	sync    *syncpkg.Service
-	mailer  *mail.Mailer
+	svc         *clients.Service
+	store       *store.Store
+	subBase     string
+	sync        *syncpkg.Service
+	mailer      *mail.Mailer
+	telegram    *backup.Telegram
+	emailBackup *backup.Email
 }
 
 // emailSubject / emailBody render the "here is your VPN subscription" message
@@ -73,12 +78,117 @@ func (h *clientsHandler) sendEmail(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "SMTP is not configured; set it up in Settings")
 		return
 	}
-	if err := h.mailer.Send(r.Context(), []string{c.Email}, emailSubject(c.Name), h.emailBody(*c), nil); err != nil {
+	if err := h.mailer.Send(r.Context(), []string{c.Email}, emailSubject(c.Name), h.emailBody(*c)); err != nil {
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
 	}
 	h.audit(r, "client.email", c.ID, "{}")
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+// qrFileName makes a safe PNG filename from a client name.
+func qrFileName(name string) string {
+	safe := strings.Map(func(r rune) rune {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '-', r == '_':
+			return r
+		default:
+			return '_'
+		}
+	}, name)
+	if safe == "" {
+		safe = "client"
+	}
+	return safe + ".png"
+}
+
+// sendConfigs bulk-sends every client's subscription link + QR code to the
+// operator's backup channels (the e-mail and Telegram set up for backups): one
+// e-mail with all links and the QR PNGs attached, plus one Telegram photo per
+// client whose caption carries the link in <code> (tap-to-copy in Telegram).
+func (h *clientsHandler) sendConfigs(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	emailOK := h.mailer != nil && h.mailer.Configured(ctx)
+	tgOK := h.telegram != nil && h.telegram.CanSend(ctx)
+	if !emailOK && !tgOK {
+		writeError(w, http.StatusBadRequest, "set up Telegram or e-mail first (Settings → Backup)")
+		return
+	}
+
+	clientsList, err := h.svc.List(ctx)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to list clients")
+		return
+	}
+	type cfg struct {
+		name, url string
+		qr        []byte
+	}
+	items := make([]cfg, 0, len(clientsList))
+	for _, c := range clientsList {
+		u := h.subURL(c.SubscriptionToken)
+		if u == "" {
+			continue
+		}
+		png, err := skipqr.Encode(u, skipqr.Medium, 512)
+		if err != nil {
+			continue
+		}
+		items = append(items, cfg{name: c.Name, url: u, qr: png})
+	}
+	if len(items) == 0 {
+		writeError(w, http.StatusBadRequest, "no clients with a subscription link")
+		return
+	}
+
+	resp := map[string]any{"total": len(items), "email_configured": emailOK, "telegram_configured": tgOK}
+
+	if emailOK {
+		to := ""
+		if h.emailBackup != nil {
+			if st, e := h.emailBackup.Status(ctx); e == nil {
+				to = st.To
+			}
+		}
+		if to == "" {
+			resp["email_error"] = "no backup e-mail recipient set"
+		} else {
+			var body strings.Builder
+			body.WriteString("Subscription links for all clients (QR codes attached as PNGs).\n\n")
+			atts := make([]mail.Attachment, 0, len(items))
+			for _, it := range items {
+				body.WriteString(it.name + "\n" + it.url + "\n\n")
+				atts = append(atts, mail.Attachment{Filename: qrFileName(it.name), Data: it.qr, ContentType: "image/png"})
+			}
+			if err := h.mailer.Send(ctx, []string{to}, "ADP panel — client subscriptions", body.String(), atts...); err != nil {
+				resp["email_error"] = err.Error()
+			} else {
+				resp["email_sent"] = true
+				resp["email_to"] = to
+			}
+		}
+	}
+
+	if tgOK {
+		sent, failed := 0, 0
+		for _, it := range items {
+			caption := fmt.Sprintf("<b>%s</b>\n<code>%s</code>", html.EscapeString(it.name), html.EscapeString(it.url))
+			if err := h.telegram.SendPhoto(ctx, qrFileName(it.name), it.qr, caption); err != nil {
+				failed++
+			} else {
+				sent++
+			}
+		}
+		resp["telegram_sent"] = sent
+		if failed > 0 {
+			resp["telegram_failed"] = failed
+		}
+	}
+
+	adminID, _ := auth.AdminIDFrom(ctx)
+	recordAudit(ctx, h.store, r, adminID, "client.send_configs", "client", 0, "")
+	writeJSON(w, http.StatusOK, resp)
 }
 
 // autoSync re-pushes config to all installed nodes after a client-level change
@@ -206,7 +316,7 @@ func (h *clientsHandler) create(w http.ResponseWriter, r *http.Request) {
 	if c.Email != "" && h.mailer != nil && h.mailer.Configured(r.Context()) {
 		go func(cl store.Client) {
 			_ = h.mailer.Send(context.Background(), []string{cl.Email},
-				emailSubject(cl.Name), h.emailBody(cl), nil)
+				emailSubject(cl.Name), h.emailBody(cl))
 		}(*c)
 	}
 	writeJSON(w, http.StatusCreated, h.toDTO(r.Context(), c, false))
