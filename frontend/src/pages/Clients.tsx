@@ -159,10 +159,13 @@ function ClientCard({ client }: { client: Client }) {
   const { toast } = useToast()
   const t = useT()
   const rel = useRelTime()
+  const navigate = useNavigate()
   const toggle = useToggleClient(client.id)
   const rotate = useRotateToken(client.id)
   const del = useDeleteClient()
   const [confirmDelete, setConfirmDelete] = useState(false)
+
+  const open = () => navigate(`/clients/${client.id}`)
 
   const grantCount = client.inbound_ids?.length ?? 0
   const grantLabel =
@@ -198,26 +201,41 @@ function ClientCard({ client }: { client: Client }) {
   }
 
   return (
-    <Card className={cn('flex flex-col p-5', !client.enabled && 'opacity-70')}>
+    <Card
+      role="button"
+      tabIndex={0}
+      onClick={open}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          open()
+        }
+      }}
+      className={cn(
+        'flex cursor-pointer flex-col p-5 transition-colors hover:border-primary/40',
+        !client.enabled && 'opacity-70',
+      )}
+    >
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
-          <Link
-            to={`/clients/${client.id}`}
-            className="block truncate font-semibold hover:underline"
-          >
-            {client.name}
-          </Link>
+          <h3 className="truncate font-semibold">{client.name}</h3>
           <div className="mt-1">
             <EnabledDot enabled={client.enabled} />
           </div>
         </div>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon" className="-mr-1 shrink-0" aria-label={t('clients.actions')}>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="-mr-1 shrink-0"
+              aria-label={t('clients.actions')}
+              onClick={(e) => e.stopPropagation()}
+            >
               <MoreHorizontal className="h-4 w-4" />
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
+          <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
             <DropdownMenuItem asChild>
               <Link to={`/clients/${client.id}`}>
                 <ExternalLink className="h-4 w-4" />
@@ -259,17 +277,11 @@ function ClientCard({ client }: { client: Client }) {
         </span>
       </div>
 
-      <div className="mt-4 flex items-center gap-2 border-t pt-4">
-        <Button variant="outline" size="sm" asChild>
-          <Link to={`/clients/${client.id}`}>
-            <ExternalLink className="h-4 w-4" />
-            {t('common.open')}
-          </Link>
-        </Button>
-        {client.subscription_url && (
+      {client.subscription_url && (
+        <div className="mt-4 border-t pt-4" onClick={(e) => e.stopPropagation()}>
           <CopyButton value={client.subscription_url} size="sm" label={t('clients.col.subscription')} />
-        )}
-      </div>
+        </div>
+      )}
 
       <Dialog open={confirmDelete} onOpenChange={setConfirmDelete}>
         <DialogContent className="sm:max-w-md">
