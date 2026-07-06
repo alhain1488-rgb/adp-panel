@@ -402,6 +402,21 @@ func (t *Telegram) SendMessageTo(ctx context.Context, chatID, htmlText string) e
 	return tgDo(t.client, req)
 }
 
+// configButtonLabel is the persistent reply-keyboard button a linked client taps
+// to re-request their config; a tap arrives as a message with this exact text.
+const configButtonLabel = "🔄 Получить конфиг"
+
+// clientKeyboardJSON is the reply keyboard shown to linked clients so they can
+// fetch their config again with one tap.
+func clientKeyboardJSON() string {
+	b, _ := json.Marshal(map[string]any{
+		"keyboard":        [][]map[string]string{{{"text": configButtonLabel}}},
+		"resize_keyboard": true,
+		"is_persistent":   true,
+	})
+	return string(b)
+}
+
 // SendPhoto sends a photo (e.g. a QR PNG) with an HTML caption to the backup chat.
 func (t *Telegram) SendPhoto(ctx context.Context, filename string, photo []byte, htmlCaption string) error {
 	_, chat, err := t.botChat(ctx)
@@ -413,6 +428,11 @@ func (t *Telegram) SendPhoto(ctx context.Context, filename string, photo []byte,
 
 // SendPhotoTo sends a photo with an HTML caption to an explicit chat id.
 func (t *Telegram) SendPhotoTo(ctx context.Context, chatID, filename string, photo []byte, htmlCaption string) error {
+	return t.sendPhoto(ctx, chatID, filename, photo, htmlCaption, "")
+}
+
+// sendPhoto uploads a photo to a chat, optionally attaching a reply markup.
+func (t *Telegram) sendPhoto(ctx context.Context, chatID, filename string, photo []byte, htmlCaption, replyMarkup string) error {
 	token, err := t.tokenOnly(ctx)
 	if err != nil {
 		return err
@@ -423,6 +443,9 @@ func (t *Telegram) SendPhotoTo(ctx context.Context, chatID, filename string, pho
 	if htmlCaption != "" {
 		_ = mw.WriteField("caption", htmlCaption)
 		_ = mw.WriteField("parse_mode", "HTML")
+	}
+	if replyMarkup != "" {
+		_ = mw.WriteField("reply_markup", replyMarkup)
 	}
 	fw, err := mw.CreateFormFile("photo", filename)
 	if err != nil {
@@ -443,11 +466,12 @@ func (t *Telegram) SendPhotoTo(ctx context.Context, chatID, filename string, pho
 	return tgDo(t.client, req)
 }
 
-// SendClientConfig delivers a client's subscription link + QR to a specific chat.
-// The link is wrapped in <code> so tapping it copies the link in Telegram.
+// SendClientConfig delivers a client's subscription link + QR to a specific chat,
+// with the "get config again" reply keyboard attached. The link is wrapped in
+// <code> so tapping it copies the link in Telegram.
 func (t *Telegram) SendClientConfig(ctx context.Context, chatID, name, subURL string, qr []byte) error {
 	caption := fmt.Sprintf("<b>%s</b>\n<code>%s</code>", html.EscapeString(name), html.EscapeString(subURL))
-	return t.SendPhotoTo(ctx, chatID, "vpn-config.png", qr, caption)
+	return t.sendPhoto(ctx, chatID, "vpn-config.png", qr, caption, clientKeyboardJSON())
 }
 
 // BotUsername returns the bot's @username (via getMe), cached after the first

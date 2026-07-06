@@ -319,6 +319,7 @@ function TelegramSection({ client }: { client: Client }) {
                 <Button size="sm" variant="ghost" onClick={handleUnlink} disabled={unlink.isPending}>
                   {t('clientDetail.telegram.unlink')}
                 </Button>
+                <p className="w-full text-xs text-muted-foreground">{t('clientDetail.telegram.selfServe')}</p>
               </div>
             ) : (
               <p className="text-sm text-muted-foreground">{t('clientDetail.telegram.notLinked')}</p>

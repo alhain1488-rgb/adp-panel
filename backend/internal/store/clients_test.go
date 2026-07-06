@@ -108,6 +108,18 @@ func TestClient_TelegramLinking(t *testing.T) {
 		t.Fatalf("linked = %+v", linked)
 	}
 
+	// Reverse lookup by chat id (used to answer in-bot config requests).
+	byChat, err := st.GetClientByTelegramChatID(ctx, "555001")
+	if err != nil || byChat.ID != c.ID {
+		t.Fatalf("by chat = %+v, %v", byChat, err)
+	}
+	if _, err := st.GetClientByTelegramChatID(ctx, ""); err != ErrNotFound {
+		t.Fatalf("empty chat matched: %v", err)
+	}
+	if _, err := st.GetClientByTelegramChatID(ctx, "404"); err != ErrNotFound {
+		t.Fatalf("unknown chat matched: %v", err)
+	}
+
 	cleared, err := st.ClearClientTelegram(ctx, c.ID)
 	if err != nil {
 		t.Fatal(err)

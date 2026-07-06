@@ -403,6 +403,7 @@ export const dict: Record<string, { en: string; ru: string }> = {
   "clientDetail.telegram.unlink": { en: "Unlink", ru: "Отвязать" },
   "clientDetail.telegram.unlinked": { en: "Telegram unlinked", ru: "Telegram отвязан" },
   "clientDetail.telegram.unlinkFailed": { en: "Could not unlink", ru: "Не удалось отвязать" },
+  "clientDetail.telegram.selfServe": { en: "The client can also fetch their config anytime with the “🔄 Get config” button (or /config) in the bot.", ru: "Клиент также может сам в любой момент получить конфиг кнопкой «🔄 Получить конфиг» (или командой /config) в боте." },
   "settings.smtp.title": { en: "E-mail delivery", ru: "Отправка почты" },
   "settings.smtp.desc": { en: "How the panel sends mail — for e-mail backups and sending clients their subscription.", ru: "Как панель отправляет письма — для бэкапов на почту и отправки клиентам их подписки." },
   "settings.smtp.enabled": { en: "Enable e-mail sending", ru: "Включить отправку почты" },

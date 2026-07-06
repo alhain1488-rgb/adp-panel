@@ -165,6 +165,16 @@ func (s *Store) LinkClientTelegram(ctx context.Context, linkToken, chatID, usern
 	return s.GetClient(ctx, c.ID)
 }
 
+// GetClientByTelegramChatID returns the client whose Telegram chat is bound to
+// chatID (used to answer a linked client's in-bot config requests). An empty
+// chatID never matches.
+func (s *Store) GetClientByTelegramChatID(ctx context.Context, chatID string) (*Client, error) {
+	if chatID == "" {
+		return nil, ErrNotFound
+	}
+	return scanClient(s.db.QueryRowContext(ctx, clientSelect+" WHERE tg_chat_id = ?", chatID))
+}
+
 // ClearClientTelegram unlinks a client's Telegram chat.
 func (s *Store) ClearClientTelegram(ctx context.Context, id int64) (*Client, error) {
 	res, err := s.db.ExecContext(ctx,

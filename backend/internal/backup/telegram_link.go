@@ -1,6 +1,7 @@
 package backup
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -29,15 +30,17 @@ type tgUpdate struct {
 	} `json:"message"`
 }
 
-// RunLinkPoller long-polls getUpdates and binds a Telegram chat to a client when
-// the user opens their "/start <link_token>" deep link. onLink (may be nil) runs
-// after a successful bind — used to push the client's config immediately. It runs
-// until ctx is cancelled and tolerates the bot being unconfigured (waits and
-// retries), so it is safe to start unconditionally.
-func (t *Telegram) RunLinkPoller(ctx context.Context, onLink func(context.Context, *store.Client)) {
+// RunLinkPoller long-polls getUpdates and, per message, either binds a chat to a
+// client ("/start <link_token>") or re-delivers a linked client's config ("/config"
+// or the reply-keyboard button). deliver (may be nil) pushes the client's config —
+// used both right after a bind and on request. It runs until ctx is cancelled and
+// tolerates the bot being unconfigured (waits and retries), so it is safe to start
+// unconditionally.
+func (t *Telegram) RunLinkPoller(ctx context.Context, deliver func(context.Context, *store.Client)) {
 	// Long-poll needs a client timeout comfortably above the poll timeout.
 	client := &http.Client{Timeout: 70 * time.Second}
 	offset := t.loadOffset(ctx)
+	commandsSet := false
 	for {
 		if ctx.Err() != nil {
 			return
@@ -48,6 +51,10 @@ func (t *Telegram) RunLinkPoller(ctx context.Context, onLink func(context.Contex
 				return
 			}
 			continue
+		}
+		if !commandsSet {
+			t.setMyCommands(ctx, token)
+			commandsSet = true
 		}
 		updates, next, err := getUpdates(ctx, client, t.apiBase, token, offset)
 		if err != nil {
@@ -65,24 +72,51 @@ func (t *Telegram) RunLinkPoller(ctx context.Context, onLink func(context.Contex
 			t.saveOffset(ctx, offset)
 		}
 		for i := range updates {
-			t.handleUpdate(ctx, updates[i], onLink)
+			t.handleUpdate(ctx, updates[i], deliver)
 		}
 	}
 }
 
-// handleUpdate processes one update: a "/start <token>" links the sender's chat
-// to the matching client.
-func (t *Telegram) handleUpdate(ctx context.Context, u tgUpdate, onLink func(context.Context, *store.Client)) {
+// handleUpdate processes one update: "/start <token>" links the sender's chat to
+// the matching client; "/config" (or the reply-keyboard button, or a bare /start
+// from an already-linked chat) re-delivers that chat's client config.
+func (t *Telegram) handleUpdate(ctx context.Context, u tgUpdate, deliver func(context.Context, *store.Client)) {
 	if u.Message == nil {
 		return
 	}
 	text := strings.TrimSpace(u.Message.Text)
-	if !strings.HasPrefix(text, "/start") {
+	if text == "" {
 		return
 	}
 	chatID := strconv.FormatInt(u.Message.Chat.ID, 10)
+
+	// On-demand config request from a linked client.
+	if isConfigRequest(text) {
+		c, err := t.store.GetClientByTelegramChatID(ctx, chatID)
+		if err != nil {
+			_ = t.SendMessageTo(ctx, chatID,
+				"Вы ещё не привязаны. Откройте персональную ссылку, которую дал вам администратор.")
+			return
+		}
+		if deliver != nil {
+			deliver(ctx, c)
+		}
+		return
+	}
+
+	if !strings.HasPrefix(text, "/start") {
+		return
+	}
 	fields := strings.Fields(text)
 	if len(fields) < 2 {
+		// Bare /start: if the chat is already linked, just resend the config;
+		// otherwise explain how to link.
+		if c, err := t.store.GetClientByTelegramChatID(ctx, chatID); err == nil {
+			if deliver != nil {
+				deliver(ctx, c)
+			}
+			return
+		}
 		_ = t.SendMessageTo(ctx, chatID,
 			"Откройте персональную ссылку, которую дал вам администратор, чтобы получать сюда свой VPN-конфиг.")
 		return
@@ -92,11 +126,49 @@ func (t *Telegram) handleUpdate(ctx context.Context, u tgUpdate, onLink func(con
 		_ = t.SendMessageTo(ctx, chatID, "Ссылка недействительна. Попросите у администратора новую.")
 		return
 	}
-	_ = t.SendMessageTo(ctx, chatID,
-		fmt.Sprintf("✅ Готово, %s! Теперь вы будете получать сюда свой VPN-конфиг.", html.EscapeString(c.Name)))
-	if onLink != nil {
-		onLink(ctx, c)
+	_ = t.SendMessageTo(ctx, chatID, fmt.Sprintf(
+		"✅ Готово, %s! Отправляю ваш конфиг. Чтобы получить его снова — кнопка «%s» ниже или команда /config.",
+		html.EscapeString(c.Name), configButtonLabel))
+	if deliver != nil {
+		deliver(ctx, c)
 	}
+}
+
+// isConfigRequest reports whether a message is a request for the client's config
+// — the reply-keyboard button or a /config-style command.
+func isConfigRequest(text string) bool {
+	if text == configButtonLabel {
+		return true
+	}
+	cmd := strings.ToLower(strings.TrimSpace(text))
+	if i := strings.IndexAny(cmd, " @"); i >= 0 {
+		cmd = cmd[:i] // strip args and "@botname"
+	}
+	switch cmd {
+	case "/config", "/getconfig", "/link", "/get", "/sub":
+		return true
+	}
+	return false
+}
+
+// setMyCommands registers the "/config" command in the bot's menu (best-effort).
+func (t *Telegram) setMyCommands(ctx context.Context, token string) {
+	body, _ := json.Marshal(map[string]any{
+		"commands": []map[string]string{
+			{"command": "config", "description": "Получить мой VPN-конфиг (ссылка + QR)"},
+		},
+	})
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
+		fmt.Sprintf("%s/bot%s/setMyCommands", t.apiBase, token), bytes.NewReader(body))
+	if err != nil {
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := t.client.Do(req)
+	if err != nil {
+		return
+	}
+	_ = resp.Body.Close()
 }
 
 // getUpdates performs one long-poll and returns the updates plus the next offset.
