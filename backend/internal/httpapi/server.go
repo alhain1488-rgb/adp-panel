@@ -114,6 +114,12 @@ func Router(d Deps) http.Handler {
 		r.Get("/api/settings", seth.get)
 		r.Put("/api/settings", seth.update)
 
+		if d.Sync != nil {
+			blh := &blocklistHandler{sync: d.Sync, store: d.Store}
+			r.Get("/api/blocklist", blh.get)
+			r.Put("/api/blocklist", blh.put)
+		}
+
 		if d.Backup != nil {
 			bh := &backupHandler{svc: d.Backup, telegram: d.Telegram, email: d.EmailBackup, store: d.Store, logger: d.Logger, restart: d.Restart}
 			r.Post("/api/backup/export", bh.export)

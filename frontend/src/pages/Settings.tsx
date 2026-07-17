@@ -14,10 +14,12 @@ import {
   AlertTriangle,
   Send,
   Mail,
+  Ban,
 } from 'lucide-react'
 import { PageHeader } from '@/components/common/page-header'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -55,6 +57,7 @@ import {
   type MailInput,
   type EmailBackupInput,
 } from '@/api/backup'
+import { useBlocklist, useUpdateBlocklist } from '@/api/blocklist'
 import { cn } from '@/lib/utils'
 import { useT } from '@/i18n/i18n'
 
@@ -69,6 +72,7 @@ export default function SettingsPage() {
           <TabsTrigger value="general">{t('settings.tab.general')}</TabsTrigger>
           <TabsTrigger value="appearance">{t('settings.tab.appearance')}</TabsTrigger>
           <TabsTrigger value="security">{t('settings.tab.security')}</TabsTrigger>
+          <TabsTrigger value="blocklist">{t('settings.tab.blocklist')}</TabsTrigger>
           <TabsTrigger value="backup">{t('settings.tab.backup')}</TabsTrigger>
         </TabsList>
 
@@ -81,11 +85,86 @@ export default function SettingsPage() {
         <TabsContent value="security" className="mt-6">
           <SecurityTab />
         </TabsContent>
+        <TabsContent value="blocklist" className="mt-6">
+          <BlocklistCard />
+        </TabsContent>
         <TabsContent value="backup" className="mt-6">
           <BackupTab />
         </TabsContent>
       </Tabs>
     </div>
+  )
+}
+
+// ---- Blocklist ----
+// A global forbidden-domain list applied at the engine level (xray/sing-box).
+// One domain per line blocks the domain and every subdomain/path.
+function BlocklistCard() {
+  const t = useT()
+  const { toast } = useToast()
+  const { data, isLoading } = useBlocklist()
+  const update = useUpdateBlocklist()
+  const [text, setText] = useState('')
+  const [dirty, setDirty] = useState(false)
+
+  useEffect(() => {
+    if (data && !dirty) setText(data.domains)
+  }, [data, dirty])
+
+  function save() {
+    update.mutate(text, {
+      onSuccess: (res) => {
+        setDirty(false)
+        setText(res.domains)
+        toast({ title: t('settings.blocklist.saved', { n: res.count }) })
+      },
+      onError: () => toast({ title: t('settings.blocklist.failed'), variant: 'destructive' }),
+    })
+  }
+
+  return (
+    <Card className="max-w-2xl">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Ban className="h-5 w-5" />
+          {t('settings.blocklist.title')}
+        </CardTitle>
+        <CardDescription>{t('settings.blocklist.desc')}</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {isLoading ? (
+          <Skeleton className="h-48" />
+        ) : (
+          <>
+            <Textarea
+              value={text}
+              onChange={(e) => {
+                setText(e.target.value)
+                setDirty(true)
+              }}
+              rows={12}
+              spellCheck={false}
+              placeholder={'vk.com\nfacebook.com\ninstagram.com'}
+              className="font-mono text-xs"
+            />
+            <p className="text-xs text-muted-foreground">{t('settings.blocklist.hint')}</p>
+            <div className="space-y-1 rounded-md border border-warning/40 bg-warning/5 p-3 text-xs text-muted-foreground">
+              <p>{t('settings.blocklist.note.https')}</p>
+              <p>{t('settings.blocklist.note.awg')}</p>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-muted-foreground">
+                {t('settings.blocklist.count', { n: data?.count ?? 0 })}
+              </span>
+              <Button onClick={save} disabled={update.isPending || !dirty}>
+                {update.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+                {t('settings.blocklist.save')}
+              </Button>
+            </div>
+          </>
+        )}
+      </CardContent>
+    </Card>
   )
 }
 

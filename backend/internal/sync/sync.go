@@ -185,6 +185,12 @@ func (s *Service) plan(ctx context.Context, srv *store.Server) ([]enginePlan, er
 		return nil, err
 	}
 
+	rawBlock, err := s.store.GetSetting(ctx, BlockedDomainsKey)
+	if err != nil {
+		return nil, err
+	}
+	blocked := ParseBlocklist(rawBlock)
+
 	xrayFrags := []json.RawMessage{}
 	hyFrags := []json.RawMessage{}
 	var xrayInb, hyInb, xrayCli, hyCli int
@@ -227,7 +233,7 @@ func (s *Service) plan(ctx context.Context, srv *store.Server) ([]enginePlan, er
 	}
 
 	if len(xrayFrags) > 0 {
-		content, err := buildXrayConfig(xrayFrags)
+		content, err := buildXrayConfig(xrayFrags, blocked)
 		if err != nil {
 			return nil, err
 		}
@@ -238,7 +244,7 @@ func (s *Service) plan(ctx context.Context, srv *store.Server) ([]enginePlan, er
 		})
 	}
 	if len(hyFrags) > 0 {
-		content, err := buildSingboxConfig(hyFrags)
+		content, err := buildSingboxConfig(hyFrags, blocked)
 		if err != nil {
 			return nil, err
 		}
@@ -407,22 +413,113 @@ func parseJSON(s string) map[string]any {
 	return m
 }
 
-// buildXrayConfig wraps xray inbound fragments into a full config.json.
-func buildXrayConfig(frags []json.RawMessage) ([]byte, error) {
+// buildXrayConfig wraps xray inbound fragments into a full config.json. Any
+// blocked domains are routed to a blackhole outbound (dropping the connection);
+// "domain:example.com" matches the domain and all its subdomains.
+func buildXrayConfig(frags []json.RawMessage, blocked []string) ([]byte, error) {
+	outbounds := []any{map[string]any{"protocol": "freedom", "tag": "direct"}}
 	cfg := map[string]any{
-		"log":       map[string]any{"loglevel": "warning"},
-		"inbounds":  frags,
-		"outbounds": []any{map[string]any{"protocol": "freedom", "tag": "direct"}},
+		"log":      map[string]any{"loglevel": "warning"},
+		"inbounds": frags,
 	}
+	if len(blocked) > 0 {
+		outbounds = append(outbounds, map[string]any{"protocol": "blackhole", "tag": "blocked"})
+		domains := make([]string, len(blocked))
+		for i, d := range blocked {
+			domains[i] = "domain:" + d
+		}
+		cfg["routing"] = map[string]any{
+			"domainStrategy": "AsIs",
+			"rules": []any{
+				map[string]any{"type": "field", "domain": domains, "outboundTag": "blocked"},
+			},
+		}
+	}
+	cfg["outbounds"] = outbounds
 	return json.MarshalIndent(cfg, "", "  ")
 }
 
 // buildSingboxConfig wraps hysteria2 inbound fragments into a sing-box config.
-func buildSingboxConfig(frags []json.RawMessage) ([]byte, error) {
+// Blocked domains (the apex plus every subdomain) are routed to a block outbound.
+func buildSingboxConfig(frags []json.RawMessage, blocked []string) ([]byte, error) {
+	outbounds := []any{map[string]any{"type": "direct", "tag": "direct"}}
 	cfg := map[string]any{
-		"log":       map[string]any{"level": "warn"},
-		"inbounds":  frags,
-		"outbounds": []any{map[string]any{"type": "direct"}},
+		"log":      map[string]any{"level": "warn"},
+		"inbounds": frags,
 	}
+	if len(blocked) > 0 {
+		outbounds = append(outbounds, map[string]any{"type": "block", "tag": "blocked"})
+		suffixes := make([]string, len(blocked))
+		for i, d := range blocked {
+			suffixes[i] = "." + d // ".example.com" → matches subdomains, label-aware
+		}
+		cfg["route"] = map[string]any{
+			"rules": []any{
+				map[string]any{"domain": blocked, "domain_suffix": suffixes, "outbound": "blocked"},
+			},
+		}
+	}
+	cfg["outbounds"] = outbounds
 	return json.MarshalIndent(cfg, "", "  ")
+}
+
+// BlockedDomainsKey is the settings key holding the operator's newline-delimited
+// forbidden-domain list.
+const BlockedDomainsKey = "blocked_domains"
+
+// ParseBlocklist turns the raw newline-delimited blocklist text into a clean,
+// deduplicated list of domains. Blank lines, "#" comments, pasted URLs, leading
+// "*.", and paths are all tolerated.
+func ParseBlocklist(raw string) []string {
+	seen := map[string]bool{}
+	out := []string{}
+	for _, line := range strings.Split(raw, "\n") {
+		d := normalizeDomain(line)
+		if d == "" || seen[d] {
+			continue
+		}
+		seen[d] = true
+		out = append(out, d)
+	}
+	return out
+}
+
+// normalizeDomain cleans one blocklist entry to a bare domain, or "" to skip it.
+func normalizeDomain(s string) string {
+	s = strings.ToLower(strings.TrimSpace(s))
+	if s == "" || strings.HasPrefix(s, "#") {
+		return ""
+	}
+	if i := strings.Index(s, "://"); i >= 0 { // strip scheme if a URL was pasted
+		s = s[i+3:]
+	}
+	s = strings.TrimPrefix(s, "*.")
+	if i := strings.IndexAny(s, "/?#"); i >= 0 { // strip path/query/fragment
+		s = s[:i]
+	}
+	s = strings.Trim(strings.TrimSpace(s), ".")
+	if !strings.Contains(s, ".") {
+		return ""
+	}
+	for _, r := range s {
+		if !(r == '.' || r == '-' || (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9')) {
+			return ""
+		}
+	}
+	return s
+}
+
+// Blocklist returns the raw newline-delimited blocked-domain list.
+func (s *Service) Blocklist(ctx context.Context) (string, error) {
+	return s.store.GetSetting(ctx, BlockedDomainsKey)
+}
+
+// SetBlocklist stores the raw blocklist and re-pushes config to every node so the
+// change takes effect (sync is idempotent, so unaffected nodes no-op).
+func (s *Service) SetBlocklist(ctx context.Context, raw string) error {
+	if err := s.store.SetSetting(ctx, BlockedDomainsKey, raw); err != nil {
+		return err
+	}
+	s.AsyncAll()
+	return nil
 }

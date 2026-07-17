@@ -126,6 +126,20 @@ const emailBackup = {
   last_ok: false,
 }
 
+// Mutable mock state for the global domain blocklist.
+let blockedDomains = ''
+function blocklistCount(raw: string): number {
+  const seen = new Set<string>()
+  for (let line of raw.split('\n')) {
+    line = line.trim().toLowerCase()
+    if (!line || line.startsWith('#')) continue
+    if (line.includes('://')) line = line.split('://')[1]
+    line = line.replace(/^\*\./, '').split(/[/?#]/)[0].replace(/^\.+|\.+$/g, '')
+    if (line.includes('.')) seen.add(line)
+  }
+  return seen.size
+}
+
 export const handlers = [
   // ---- Health ----
   http.get('/healthz', () => json({ status: 'ok', version: '0.1.0-mock' })),
@@ -763,6 +777,18 @@ export const handlers = [
       },
     ]
     return json({ name: c.name, subscription_url: c.subscription_url, links, amneziawg })
+  }),
+
+  // ---- Blocklist ----
+  http.get('/api/blocklist', ({ request }) => {
+    if (!requireAuth(request)) return unauthorized()
+    return json({ domains: blockedDomains, count: blocklistCount(blockedDomains) })
+  }),
+  http.put('/api/blocklist', async ({ request }) => {
+    if (!requireAuth(request)) return unauthorized()
+    const input = (await request.json()) as { domains?: string }
+    blockedDomains = input.domains ?? ''
+    return json({ domains: blockedDomains, count: blocklistCount(blockedDomains) })
   }),
 
   // ---- System (host metrics for the panel machine) ----

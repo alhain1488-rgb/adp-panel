@@ -472,3 +472,21 @@ Resend-`html`); frontend `build`; `/cheremsha.png` отдаётся 200 image/pn
 **Проверено:** backend `go build/vet/gofmt/test` (+ `TestPortalLogin` верный/неверный/полный-URL/выключенный,
 `TestPortalToken`); frontend `tsc/lint/build`; превью — вход по полной ссылке → подписка+QR+конфиги+AWG,
 неверный вход → 401 двуязычный, консоль чистая.
+
+## Пост-9 — Блокировка доменов из панели (уровень ядра) ✅ (v0.9.10.0)
+
+Настройки → вкладка «Блокировки»: глобальный список запрещённых доменов, один в строке. Сохранение
+пересинхронизирует все ноды, и трафик к домену (со всеми поддоменами/страницами) рвётся на уровне
+движка. `vk.com` → глушит `vk.com`, `m.vk.com`, `vk.com/*`.
+
+- Backend (`internal/sync`): `ParseBlocklist` (нормализация — URL/`*.`/комментарии/дедуп), правки в
+  `buildXrayConfig` (routing → outbound `blackhole`, `domain:<домен>`) и `buildSingboxConfig`
+  (route → outbound `block`, `domain`+`domain_suffix`); список в setting `blocked_domains`;
+  `Blocklist`/`SetBlocklist` (последний триггерит `AsyncAll`). Эндпоинты `GET/PUT /api/blocklist`.
+- Frontend: вкладка «Блокировки» с textarea + сохранение; `api/blocklist.ts`.
+- Ограничения (в UI подсказками): кастомной страницы-заглушки для HTTPS нет (нельзя серт на чужой
+  домен); AmneziaWG (L3) этим не фильтруется; на sing-box 1.11+ `block`-outbound переименован.
+
+**Проверено:** backend `go build/vet/gofmt/test` (16 пакетов; + `ParseBlocklist`,
+`buildXray/Singbox_Blocked`); frontend `tsc/lint/build`; превью — вкладка рендерится, поток данных
+(мусор 6 строк → 3 валидных домена), консоль чистая.
