@@ -3,9 +3,10 @@
 [Русский](README.md) · **English**
 
 A self-hosted web panel to manage several VPS running **Xray**, **Hysteria2** and
-**AmneziaWG** proxies from one place — for **personal use**. One panel on a main VPS controls the
-proxies on all your nodes over SSH: servers, inbounds of many protocols, clients, and their
-subscriptions. No billing, traffic limits, or multi-tenancy — by design.
+**AmneziaWG** proxies from one place. One panel on a main VPS controls the proxies on all your nodes
+over SSH: servers, inbounds of many protocols, clients, and their subscriptions. **Personal use** by
+default; when you want it, flip on **optional billing** (time-based subscriptions paid with Telegram
+Stars). No traffic limits or multi-tenancy — by design.
 
 - **Protocols:** VLESS (Reality & TLS), VMess, Trojan, Shadowsocks — natively via xray-core;
   **Hysteria2** — via a separate engine on the node (sing-box), because Hysteria2 (QUIC) is not an
@@ -41,6 +42,19 @@ subscriptions. No billing, traffic limits, or multi-tenancy — by design.
   button that broadcasts every client’s link + QR to the backup Telegram and e-mail.
 - **E-mail**: send a client their subscription (via **Resend** over HTTPS, or plain SMTP).
 - All messages to clients (Telegram and e-mail) are **bilingual RU (EN)** with a branding plate.
+
+**Payments (optional, off by default)**
+- A **ruble wallet per client** and **time-based tariffs** (week/month/year). Prices, the ⭐→₽ rate
+  and the support contact are configured in **Settings → Payments**.
+- **Top up with Telegram Stars** straight from the bot (`sendInvoice` in `XTR`); Stars convert to
+  rubles at your rate and land on the balance. Payment methods are pluggable — **card / SBP / crypto**
+  are wired into the bot as “coming soon”.
+- The bot gives clients a menu: status/balance, top up, buy subscription, history, support. Buying a
+  tariff debits rubles and extends the subscription; **on expiry access is auto-suspended** (a
+  background reconciler) and re-enabled on the next purchase. While billing is off the panel stays
+  personal and suspends no one.
+- On the client page (**Payments** tab) the operator sees the balance and status, can credit/debit
+  manually and **grant a subscription for free** (comp), and review the transaction history.
 
 **Operations**
 - **Backups** three ways: manual export/import of an encrypted archive, auto-backup to **Telegram**,

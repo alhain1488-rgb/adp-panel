@@ -15,6 +15,7 @@ import {
   Send,
   Mail,
   Ban,
+  Wallet,
 } from 'lucide-react'
 import { PageHeader } from '@/components/common/page-header'
 import { Button } from '@/components/ui/button'
@@ -58,6 +59,11 @@ import {
   type EmailBackupInput,
 } from '@/api/backup'
 import { useBlocklist, useUpdateBlocklist } from '@/api/blocklist'
+import {
+  useBillingSettings,
+  useUpdateBillingSettings,
+  type BillingSettings,
+} from '@/api/billing'
 import { cn } from '@/lib/utils'
 import { useT } from '@/i18n/i18n'
 
@@ -73,6 +79,7 @@ export default function SettingsPage() {
           <TabsTrigger value="appearance">{t('settings.tab.appearance')}</TabsTrigger>
           <TabsTrigger value="security">{t('settings.tab.security')}</TabsTrigger>
           <TabsTrigger value="blocklist">{t('settings.tab.blocklist')}</TabsTrigger>
+          <TabsTrigger value="billing">{t('settings.tab.billing')}</TabsTrigger>
           <TabsTrigger value="backup">{t('settings.tab.backup')}</TabsTrigger>
         </TabsList>
 
@@ -87,6 +94,9 @@ export default function SettingsPage() {
         </TabsContent>
         <TabsContent value="blocklist" className="mt-6">
           <BlocklistCard />
+        </TabsContent>
+        <TabsContent value="billing" className="mt-6">
+          <BillingCard />
         </TabsContent>
         <TabsContent value="backup" className="mt-6">
           <BackupTab />
@@ -159,6 +169,137 @@ function BlocklistCard() {
               <Button onClick={save} disabled={update.isPending || !dirty}>
                 {update.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
                 {t('settings.blocklist.save')}
+              </Button>
+            </div>
+          </>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
+// ---- Billing ----
+// Operator-tunable payments: tariff prices (₽), the Star→₽ rate and the support
+// contact. Amounts are edited in rubles here and stored in kopecks by the API.
+function BillingCard() {
+  const t = useT()
+  const { toast } = useToast()
+  const { data, isLoading } = useBillingSettings()
+  const update = useUpdateBillingSettings()
+
+  const rub = (kopecks: number) => String(kopecks / 100)
+  const [form, setForm] = useState({ enabled: false, week: '', month: '', year: '', starRate: '', support: '' })
+
+  useEffect(() => {
+    if (data)
+      setForm({
+        enabled: data.enabled,
+        week: rub(data.tariff_week_kopecks),
+        month: rub(data.tariff_month_kopecks),
+        year: rub(data.tariff_year_kopecks),
+        starRate: rub(data.star_rate_kopecks),
+        support: data.support_contact,
+      })
+  }, [data])
+
+  function kopecks(v: string, fallback: number): number {
+    const n = Math.round(parseFloat(v.replace(',', '.')) * 100)
+    return Number.isFinite(n) && n >= 0 ? n : fallback
+  }
+
+  function save() {
+    // A cleared/invalid field keeps the currently stored value rather than
+    // silently resetting to a system default.
+    const payload: BillingSettings = {
+      enabled: form.enabled,
+      tariff_week_kopecks: kopecks(form.week, data?.tariff_week_kopecks ?? 7000),
+      tariff_month_kopecks: kopecks(form.month, data?.tariff_month_kopecks ?? 20000),
+      tariff_year_kopecks: kopecks(form.year, data?.tariff_year_kopecks ?? 200000),
+      star_rate_kopecks: kopecks(form.starRate, data?.star_rate_kopecks ?? 130) || (data?.star_rate_kopecks ?? 130),
+      support_contact: form.support.trim(),
+    }
+    update.mutate(payload, {
+      onSuccess: () => toast({ title: t('settings.billing.saved') }),
+      onError: () => toast({ title: t('settings.billing.failed'), variant: 'destructive' }),
+    })
+  }
+
+  const priceField = (key: 'week' | 'month' | 'year', label: string) => (
+    <div className="space-y-1.5">
+      <Label htmlFor={`tariff-${key}`} className="text-xs text-muted-foreground">
+        {label}
+      </Label>
+      <Input
+        id={`tariff-${key}`}
+        inputMode="decimal"
+        value={form[key]}
+        onChange={(e) => setForm((f) => ({ ...f, [key]: e.target.value }))}
+      />
+    </div>
+  )
+
+  return (
+    <Card className="max-w-2xl">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Wallet className="h-5 w-5" />
+          {t('settings.billing.title')}
+        </CardTitle>
+        <CardDescription>{t('settings.billing.desc')}</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-6">
+        {isLoading ? (
+          <Skeleton className="h-48" />
+        ) : (
+          <>
+            <div className="flex items-center justify-between gap-4 rounded-md border p-3">
+              <div>
+                <Label htmlFor="billing-enabled">{t('settings.billing.enable')}</Label>
+                <p className="mt-1 text-xs text-muted-foreground">{t('settings.billing.enableHint')}</p>
+              </div>
+              <Switch
+                id="billing-enabled"
+                checked={form.enabled}
+                onCheckedChange={(v) => setForm((f) => ({ ...f, enabled: v }))}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label>{t('settings.billing.tariffs')}</Label>
+              <div className="grid grid-cols-3 gap-3">
+                {priceField('week', t('settings.billing.week'))}
+                {priceField('month', t('settings.billing.month'))}
+                {priceField('year', t('settings.billing.year'))}
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="star-rate">{t('settings.billing.starRate')}</Label>
+              <Input
+                id="star-rate"
+                inputMode="decimal"
+                className="max-w-[12rem]"
+                value={form.starRate}
+                onChange={(e) => setForm((f) => ({ ...f, starRate: e.target.value }))}
+              />
+              <p className="text-xs text-muted-foreground">{t('settings.billing.starRateHint')}</p>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="support">{t('settings.billing.support')}</Label>
+              <Input
+                id="support"
+                placeholder="@solepytt"
+                value={form.support}
+                onChange={(e) => setForm((f) => ({ ...f, support: e.target.value }))}
+              />
+              <p className="text-xs text-muted-foreground">{t('settings.billing.supportHint')}</p>
+            </div>
+
+            <div className="flex justify-end">
+              <Button onClick={save} disabled={update.isPending}>
+                {update.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+                {t('common.save')}
               </Button>
             </div>
           </>

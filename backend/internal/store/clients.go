@@ -19,6 +19,9 @@ type Client struct {
 	TelegramChatID    string // numeric chat id once the client links their Telegram
 	TelegramUsername  string // @handle, display only
 	TelegramLinkToken string // deep-link payload that binds a chat to this client
+	WalletKopecks     int64  // prepaid balance in kopecks (100 = 1 RUB)
+	ActiveUntil       string // subscription expiry (RFC3339); "" = no billed subscription
+	BillingManaged    bool   // true once the client has bought a subscription
 	CreatedAt         string
 	UpdatedAt         string
 }
@@ -58,15 +61,16 @@ type InboundWithServer struct {
 
 const clientSelect = `
 	SELECT id, name, uuid, password, subscription_token, enabled, remark, created_at, updated_at, email,
-	       tg_chat_id, tg_username, tg_link_token
+	       tg_chat_id, tg_username, tg_link_token, wallet_kopecks, active_until, billing_managed
 	FROM clients`
 
 func scanClient(sc interface{ Scan(...any) error }) (*Client, error) {
 	var c Client
-	var enabled int64
+	var enabled, managed int64
 	err := sc.Scan(&c.ID, &c.Name, &c.UUID, &c.Password, &c.SubscriptionToken,
 		&enabled, &c.Remark, &c.CreatedAt, &c.UpdatedAt, &c.Email,
-		&c.TelegramChatID, &c.TelegramUsername, &c.TelegramLinkToken)
+		&c.TelegramChatID, &c.TelegramUsername, &c.TelegramLinkToken,
+		&c.WalletKopecks, &c.ActiveUntil, &managed)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrNotFound
@@ -74,6 +78,7 @@ func scanClient(sc interface{ Scan(...any) error }) (*Client, error) {
 		return nil, err
 	}
 	c.Enabled = enabled != 0
+	c.BillingManaged = managed != 0
 	return &c, nil
 }
 
@@ -330,7 +335,8 @@ func (s *Store) ListActiveClientInbounds(ctx context.Context, clientID int64) ([
 func (s *Store) ListInboundGrantedClients(ctx context.Context, inboundID int64) ([]Client, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT c.id, c.name, c.uuid, c.password, c.subscription_token, c.enabled, c.remark,
-		       c.created_at, c.updated_at, c.email, c.tg_chat_id, c.tg_username, c.tg_link_token
+		       c.created_at, c.updated_at, c.email, c.tg_chat_id, c.tg_username, c.tg_link_token,
+		       c.wallet_kopecks, c.active_until, c.billing_managed
 		FROM client_inbounds ci
 		JOIN clients c ON c.id = ci.client_id
 		WHERE ci.inbound_id = ? AND ci.enabled = 1 AND c.enabled = 1

@@ -126,6 +126,57 @@ const emailBackup = {
   last_ok: false,
 }
 
+// Mutable mock state for billing. Enabled by default in the mock so the payment
+// UI is reviewable without setup; the real backend defaults billing off.
+const billingSettings = {
+  enabled: true,
+  tariff_week_kopecks: 7000,
+  tariff_month_kopecks: 20000,
+  tariff_year_kopecks: 200000,
+  star_rate_kopecks: 130,
+  support_contact: '@solepytt',
+}
+interface MockBillingTx {
+  id: number
+  kind: string
+  method: string
+  amount_kopecks: number
+  stars?: number
+  tariff?: string
+  detail?: string
+  created_at: string
+}
+interface MockBilling {
+  balance_kopecks: number
+  active_until: string
+  managed: boolean
+  transactions: MockBillingTx[]
+}
+const clientBilling: Record<number, MockBilling> = {}
+let billingTxSeq = 1
+function getBilling(id: number): MockBilling {
+  if (!clientBilling[id]) clientBilling[id] = { balance_kopecks: 0, active_until: '', managed: false, transactions: [] }
+  return clientBilling[id]
+}
+function pushTx(mb: MockBilling, tx: Omit<MockBillingTx, 'id' | 'created_at'>) {
+  mb.transactions.unshift({ ...tx, id: billingTxSeq++, created_at: new Date().toISOString() })
+}
+function billingSnapshot(id: number) {
+  const mb = getBilling(id)
+  const active = !!mb.active_until && new Date(mb.active_until).getTime() > Date.now()
+  return {
+    client_id: id,
+    balance_kopecks: mb.balance_kopecks,
+    active_until: mb.active_until,
+    active,
+    managed: mb.managed,
+    transactions: mb.transactions,
+  }
+}
+function tariffDays(key: string): number {
+  return key === 'week' ? 7 : key === 'year' ? 365 : 30
+}
+
 // Mutable mock state for the global domain blocklist.
 let blockedDomains = ''
 function blocklistCount(raw: string): number {
@@ -789,6 +840,53 @@ export const handlers = [
     const input = (await request.json()) as { domains?: string }
     blockedDomains = input.domains ?? ''
     return json({ domains: blockedDomains, count: blocklistCount(blockedDomains) })
+  }),
+
+  // ---- Billing ----
+  http.get('/api/billing/settings', ({ request }) => {
+    if (!requireAuth(request)) return unauthorized()
+    return json(billingSettings)
+  }),
+  http.put('/api/billing/settings', async ({ request }) => {
+    if (!requireAuth(request)) return unauthorized()
+    const input = (await request.json()) as Partial<typeof billingSettings>
+    Object.assign(billingSettings, input)
+    return json(billingSettings)
+  }),
+  http.get('/api/clients/:id/billing', ({ request, params }) => {
+    if (!requireAuth(request)) return unauthorized()
+    const id = Number(params.id)
+    if (!clients.find((x) => x.id === id)) return notFound()
+    return json(billingSnapshot(id))
+  }),
+  http.post('/api/clients/:id/billing/topup', async ({ request, params }) => {
+    if (!requireAuth(request)) return unauthorized()
+    const id = Number(params.id)
+    if (!clients.find((x) => x.id === id)) return notFound()
+    const input = (await request.json()) as { kopecks?: number; detail?: string }
+    const k = Math.trunc(input.kopecks ?? 0)
+    if (!k) return json({ error: 'amount must be non-zero' }, { status: 400 })
+    const mb = getBilling(id)
+    mb.balance_kopecks += k
+    pushTx(mb, { kind: 'adjust', method: 'manual', amount_kopecks: k, detail: input.detail })
+    return json(billingSnapshot(id))
+  }),
+  http.post('/api/clients/:id/billing/grant', async ({ request, params }) => {
+    if (!requireAuth(request)) return unauthorized()
+    const id = Number(params.id)
+    const c = clients.find((x) => x.id === id)
+    if (!c) return notFound()
+    const input = (await request.json()) as { tariff?: string; days?: number }
+    const days = input.tariff ? tariffDays(input.tariff) : Math.trunc(input.days ?? 0)
+    if (days <= 0) return json({ error: 'days must be positive' }, { status: 400 })
+    const mb = getBilling(id)
+    const base = mb.active_until && new Date(mb.active_until).getTime() > Date.now() ? new Date(mb.active_until) : new Date()
+    mb.active_until = new Date(base.getTime() + days * 86400000).toISOString()
+    mb.managed = true
+    pushTx(mb, { kind: 'grant', method: 'manual', amount_kopecks: 0, detail: input.tariff })
+    c.enabled = true
+    c.updated_at = new Date().toISOString()
+    return json(billingSnapshot(id))
   }),
 
   // ---- System (host metrics for the panel machine) ----

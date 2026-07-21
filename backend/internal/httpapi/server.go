@@ -14,6 +14,7 @@ import (
 
 	"github.com/adp/panel/internal/auth"
 	"github.com/adp/panel/internal/backup"
+	"github.com/adp/panel/internal/billing"
 	"github.com/adp/panel/internal/clients"
 	"github.com/adp/panel/internal/inbounds"
 	"github.com/adp/panel/internal/mail"
@@ -36,6 +37,7 @@ type Deps struct {
 	Backup       *backup.Service
 	Telegram     *backup.Telegram
 	EmailBackup  *backup.Email
+	Billing      *billing.Service
 	Mail         *mail.Mailer
 	Logger       *slog.Logger
 	Version      string
@@ -120,6 +122,13 @@ func Router(d Deps) http.Handler {
 			r.Put("/api/blocklist", blh.put)
 		}
 
+		var bilh *billingHandler
+		if d.Billing != nil {
+			bilh = &billingHandler{svc: d.Billing, store: d.Store}
+			r.Get("/api/billing/settings", bilh.getSettings)
+			r.Put("/api/billing/settings", bilh.putSettings)
+		}
+
 		if d.Backup != nil {
 			bh := &backupHandler{svc: d.Backup, telegram: d.Telegram, email: d.EmailBackup, store: d.Store, logger: d.Logger, restart: d.Restart}
 			r.Post("/api/backup/export", bh.export)
@@ -189,6 +198,11 @@ func Router(d Deps) http.Handler {
 				r.Get("/telegram-link", ch.telegramLink)
 				r.Post("/telegram-config", ch.telegramConfig)
 				r.Post("/telegram-unlink", ch.telegramUnlink)
+				if bilh != nil {
+					r.Get("/billing", bilh.clientGet)
+					r.Post("/billing/topup", bilh.clientTopup)
+					r.Post("/billing/grant", bilh.clientGrant)
+				}
 			})
 		})
 	})

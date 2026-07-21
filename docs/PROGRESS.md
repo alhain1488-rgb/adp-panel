@@ -490,3 +490,36 @@ Resend-`html`); frontend `build`; `/cheremsha.png` отдаётся 200 image/pn
 **Проверено:** backend `go build/vet/gofmt/test` (16 пакетов; + `ParseBlocklist`,
 `buildXray/Singbox_Blocked`); frontend `tsc/lint/build`; превью — вкладка рендерится, поток данных
 (мусор 6 строк → 3 валидных домена), консоль чистая.
+
+## Пост-10 — Оплата подписок (опциональный биллинг) ✅ (v0.9.11.0)
+
+Монетизация поверх личной панели, **по умолчанию выключена** (Настройки → Оплата, тумблер). Клиентский
+кошелёк в рублях (копейки, `100 = 1 ₽`), пополнение через **Telegram Stars**, повременные тарифы
+(неделя/месяц/год), авто-приостановка managed-клиентов по истечении подписки. Способы оплаты сделаны
+расширяемыми — карта/СБП/крипта показаны в боте как «скоро» (бэкенд позже). Полное описание — `docs/SPEC.md §14`.
+
+- Миграция `0006` (аддитивная): колонки `wallet_kopecks`/`active_until`/`billing_managed` на `clients`
+  + таблица `billing_transactions` (append-only леджер, частичный уникальный индекс на `charge_id` →
+  идемпотентность). Store: `CreditWallet` (атомарно, дубль charge_id → `ErrDuplicateCharge`),
+  `PurchaseSubscription` (проверка баланса → `ErrInsufficientFunds`, продление, managed, enable),
+  `GrantSubscription`, `ListBillingTx`, `ListManagedClients`.
+- `internal/billing`: настройки (KV, дефолты 70/200/2000 ₽, курс 130 коп/⭐, поддержка @solepytt),
+  тарифы, `CreditStars` (⭐→₽ по курсу), `ManualAdjust`, `Purchase` (продление от `max(now, active_until)`),
+  `Grant` (комп без списания), `Reconcile`/`RunReconciler` (каждые 5 мин; только выключает истёкших
+  managed, no-op при выключенном биллинге).
+- Telegram-бот (`internal/backup`): расширен парсинг updates (`callback_query`, `pre_checkout_query`,
+  `successful_payment`); reply-меню (статус/пополнить/купить/история/поддержка) + inline-потоки; выбор
+  способа оплаты (Stars активен, остальные «скоро»); `sendInvoice` XTR (пустой provider_token, один
+  LabeledPrice = число ⭐); `answerPreCheckoutQuery` за ≤10 c; зачисление по `successful_payment`
+  (идемпотентно). Двуязычные RU (EN) сообщения.
+- HTTP: `GET/PUT /api/billing/settings`, `GET /api/clients/{id}/billing`, `POST .../billing/topup`,
+  `POST .../billing/grant`; wired в `main.go` (сервис + reconciler-горутина). openapi.yaml дополнен.
+- Frontend: `api/billing.ts` (типы + хуки + `formatRubles`), Настройки → вкладка «Оплата»
+  (`BillingCard`), карточка клиента → вкладка «Оплата» (`BillingTab`: баланс, статус, ручное
+  начисление/списание, выдача подписки, история). Моки. Вкладка у клиента видна при включённом биллинге.
+
+**Проверено:** backend `go build/vet/gofmt/test` (+ `store/billing_test` идемпотентность/insufficient/grant,
+`billing_test` credit-stars/purchase/extend/reconcile/disabled-noop/grant, `httpapi` settings+wallet
+end-to-end, `telegram_billing_test` payload/formatRubles/commands); frontend `tsc/lint/build`; превью —
+вкладка «Оплата» рендерится, начисление 500 ₽ + выдача месяца → баланс/статус/история обновились,
+тост «Применено», консоль чистая.

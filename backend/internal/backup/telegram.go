@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/adp/panel/internal/billing"
 	"github.com/adp/panel/internal/brand"
 	"github.com/adp/panel/internal/crypto"
 	"github.com/adp/panel/internal/store"
@@ -69,9 +70,19 @@ type Telegram struct {
 	client  *http.Client
 	apiBase string
 	now     func() time.Time
+	billing *billing.Service // optional; enables the in-bot payment/menu flow
 
 	mu          sync.Mutex
 	botUsername string // cached getMe username; cleared when the token changes
+}
+
+// SetBilling wires the billing engine into the bot, enabling the payment menu,
+// Stars invoices and top-up/purchase flows. Safe to leave unset (menu hidden).
+func (t *Telegram) SetBilling(b *billing.Service) { t.billing = b }
+
+// billingOn reports whether the in-bot payment flow should be offered.
+func (t *Telegram) billingOn(ctx context.Context) bool {
+	return t.billing != nil && t.billing.Enabled(ctx)
 }
 
 // NewTelegram wires the Telegram backup delivery.
@@ -407,11 +418,20 @@ func (t *Telegram) SendMessageTo(ctx context.Context, chatID, htmlText string) e
 // to re-request their config; a tap arrives as a message with this exact text.
 const configButtonLabel = "🔄 Получить конфиг"
 
-// clientKeyboardJSON is the reply keyboard shown to linked clients so they can
-// fetch their config again with one tap.
-func clientKeyboardJSON() string {
+// clientKeyboardJSON is the reply keyboard shown to linked clients. It always
+// carries the "get config" button; when billing is on it also exposes the wallet
+// and subscription actions. Taps arrive as messages whose text is the button label.
+func clientKeyboardJSON(billingEnabled bool) string {
+	rows := [][]map[string]string{{{"text": configButtonLabel}}}
+	if billingEnabled {
+		rows = append(rows,
+			[]map[string]string{{"text": statusButtonLabel}, {"text": historyButtonLabel}},
+			[]map[string]string{{"text": topupButtonLabel}, {"text": buyButtonLabel}},
+			[]map[string]string{{"text": supportButtonLabel}},
+		)
+	}
 	b, _ := json.Marshal(map[string]any{
-		"keyboard":        [][]map[string]string{{{"text": configButtonLabel}}},
+		"keyboard":        rows,
 		"resize_keyboard": true,
 		"is_persistent":   true,
 	})
@@ -474,7 +494,7 @@ func (t *Telegram) SendClientConfig(ctx context.Context, chatID, name, subURL st
 	caption := fmt.Sprintf(
 		"<b>%s</b>\nВаша VPN-подписка (Your VPN subscription):\n<code>%s</code>\n\n%s",
 		html.EscapeString(name), html.EscapeString(subURL), brand.TextFooter())
-	return t.sendPhoto(ctx, chatID, "vpn-config.png", qr, caption, clientKeyboardJSON())
+	return t.sendPhoto(ctx, chatID, "vpn-config.png", qr, caption, clientKeyboardJSON(t.billingOn(ctx)))
 }
 
 // BotUsername returns the bot's @username (via getMe), cached after the first

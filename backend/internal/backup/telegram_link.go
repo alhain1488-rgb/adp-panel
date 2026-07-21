@@ -21,19 +21,58 @@ func withFooter(msg string) string {
 	return msg + "\n\n" + brand.TextFooter()
 }
 
-// tgUpdate is the subset of a Telegram update we act on: a text message (we only
-// care about "/start <token>" deep links).
+// tgUpdate is the subset of a Telegram update we act on: text messages (deep-link
+// "/start <token>", the reply-keyboard buttons and commands), inline-button taps
+// (callback_query), and the two payment updates (pre_checkout_query and a message
+// carrying successful_payment).
 type tgUpdate struct {
-	UpdateID int64 `json:"update_id"`
-	Message  *struct {
-		Text string `json:"text"`
+	UpdateID         int64            `json:"update_id"`
+	Message          *tgMessage       `json:"message"`
+	CallbackQuery    *tgCallbackQuery `json:"callback_query"`
+	PreCheckoutQuery *tgPreCheckout   `json:"pre_checkout_query"`
+}
+
+type tgMessage struct {
+	Text string `json:"text"`
+	Chat struct {
+		ID int64 `json:"id"`
+	} `json:"chat"`
+	From struct {
+		ID       int64  `json:"id"`
+		Username string `json:"username"`
+	} `json:"from"`
+	SuccessfulPayment *tgSuccessfulPayment `json:"successful_payment"`
+}
+
+type tgCallbackQuery struct {
+	ID   string `json:"id"`
+	From struct {
+		ID       int64  `json:"id"`
+		Username string `json:"username"`
+	} `json:"from"`
+	Message *struct {
 		Chat struct {
 			ID int64 `json:"id"`
 		} `json:"chat"`
-		From struct {
-			Username string `json:"username"`
-		} `json:"from"`
 	} `json:"message"`
+	Data string `json:"data"`
+}
+
+type tgPreCheckout struct {
+	ID   string `json:"id"`
+	From struct {
+		ID int64 `json:"id"`
+	} `json:"from"`
+	Currency       string `json:"currency"`
+	TotalAmount    int64  `json:"total_amount"`
+	InvoicePayload string `json:"invoice_payload"`
+}
+
+type tgSuccessfulPayment struct {
+	Currency                string `json:"currency"`
+	TotalAmount             int64  `json:"total_amount"`
+	InvoicePayload          string `json:"invoice_payload"`
+	TelegramPaymentChargeID string `json:"telegram_payment_charge_id"`
 }
 
 // RunLinkPoller long-polls getUpdates and, per message, either binds a chat to a
@@ -73,23 +112,50 @@ func (t *Telegram) RunLinkPoller(ctx context.Context, deliver func(context.Conte
 			}
 			continue
 		}
+		// Answer time-critical pre_checkout_query updates first (Telegram cancels
+		// the charge if not answered within ~10s), then handle everything else.
+		for i := range updates {
+			if updates[i].PreCheckoutQuery != nil {
+				t.handleUpdate(ctx, updates[i], deliver)
+			}
+		}
+		for i := range updates {
+			if updates[i].PreCheckoutQuery == nil {
+				t.handleUpdate(ctx, updates[i], deliver)
+			}
+		}
+		// Advance the cursor only AFTER the batch is handled. A crash mid-batch
+		// then re-delivers it (all handlers are idempotent — Stars crediting by
+		// charge id, linking, config resend), which is safe; advancing first
+		// would let a captured payment be lost on restart.
 		if next != offset {
 			offset = next
 			t.saveOffset(ctx, offset)
 		}
-		for i := range updates {
-			t.handleUpdate(ctx, updates[i], deliver)
-		}
 	}
 }
 
-// handleUpdate processes one update: "/start <token>" links the sender's chat to
-// the matching client; "/config" (or the reply-keyboard button, or a bare /start
-// from an already-linked chat) re-delivers that chat's client config.
+// handleUpdate routes one update to the right handler: inline-button taps
+// (callback_query) and the two payment updates go to the billing flow; otherwise
+// a text message is handled below.
 func (t *Telegram) handleUpdate(ctx context.Context, u tgUpdate, deliver func(context.Context, *store.Client)) {
-	if u.Message == nil {
-		return
+	switch {
+	case u.CallbackQuery != nil:
+		t.handleCallback(ctx, u.CallbackQuery, deliver)
+	case u.PreCheckoutQuery != nil:
+		t.handlePreCheckout(ctx, u.PreCheckoutQuery)
+	case u.Message != nil && u.Message.SuccessfulPayment != nil:
+		t.handleSuccessfulPayment(ctx, u.Message, deliver)
+	case u.Message != nil:
+		t.handleTextMessage(ctx, u, deliver)
 	}
+}
+
+// handleTextMessage processes one text message: "/start <token>" links the
+// sender's chat to the matching client; "/config" (or the reply-keyboard button,
+// or a bare /start from an already-linked chat) re-delivers that chat's config;
+// the billing reply-keyboard buttons/commands drive the wallet flow.
+func (t *Telegram) handleTextMessage(ctx context.Context, u tgUpdate, deliver func(context.Context, *store.Client)) {
 	text := strings.TrimSpace(u.Message.Text)
 	if text == "" {
 		return
@@ -108,6 +174,11 @@ func (t *Telegram) handleUpdate(ctx context.Context, u tgUpdate, deliver func(co
 		if deliver != nil {
 			deliver(ctx, c)
 		}
+		return
+	}
+
+	// Billing reply-keyboard buttons and commands (balance, top-up, buy, …).
+	if t.billingOn(ctx) && t.handleBillingText(ctx, chatID, text, deliver) {
 		return
 	}
 
@@ -162,11 +233,17 @@ func isConfigRequest(text string) bool {
 	return false
 }
 
-// setMyCommands registers the "/config" command in the bot's menu (best-effort).
+// setMyCommands registers the bot's command menu (best-effort). The billing
+// commands are always listed; they simply do nothing while billing is disabled.
 func (t *Telegram) setMyCommands(ctx context.Context, token string) {
 	body, _ := json.Marshal(map[string]any{
 		"commands": []map[string]string{
 			{"command": "config", "description": "Получить мой VPN-конфиг (ссылка + QR)"},
+			{"command": "status", "description": "Мой баланс и статус подписки"},
+			{"command": "topup", "description": "Пополнить баланс"},
+			{"command": "buy", "description": "Купить подписку"},
+			{"command": "history", "description": "История операций"},
+			{"command": "support", "description": "Связаться с поддержкой"},
 		},
 	})
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost,

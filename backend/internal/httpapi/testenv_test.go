@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/adp/panel/internal/auth"
+	"github.com/adp/panel/internal/billing"
 	"github.com/adp/panel/internal/clients"
 	"github.com/adp/panel/internal/crypto"
 	"github.com/adp/panel/internal/db"
@@ -28,6 +29,7 @@ type testEnv struct {
 	servers *servers.Service
 	clients *clients.Service
 	sync    *syncpkg.Service
+	billing *billing.Service
 	runner  *sshtest.MockRunner
 	dialer  *sshtest.MockDialer
 }
@@ -84,6 +86,7 @@ func newTestEnv(t *testing.T) *testEnv {
 	clientsSvc := clients.NewService(st)
 	subscriptionSvc := subscription.NewService(st, clientsSvc)
 	syncSvc := syncpkg.NewService(st, serversSvc, clientsSvc)
+	billingSvc := billing.NewService(st, syncSvc, logging.New())
 
 	router := Router(Deps{
 		DB:           database,
@@ -94,6 +97,7 @@ func newTestEnv(t *testing.T) *testEnv {
 		Clients:      clientsSvc,
 		Subscription: subscriptionSvc,
 		Sync:         syncSvc,
+		Billing:      billingSvc,
 		Logger:       logging.New(),
 		Version:      "test",
 		Domain:       "panel.test",
@@ -101,6 +105,6 @@ func newTestEnv(t *testing.T) *testEnv {
 	})
 	return &testEnv{
 		router: router, svc: authSvc, store: st, servers: serversSvc,
-		clients: clientsSvc, sync: syncSvc, runner: runner, dialer: dialer,
+		clients: clientsSvc, sync: syncSvc, billing: billingSvc, runner: runner, dialer: dialer,
 	}
 }

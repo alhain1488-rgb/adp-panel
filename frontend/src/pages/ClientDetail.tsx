@@ -14,6 +14,10 @@ import {
   ShieldCheck,
   Mail,
   Send,
+  Wallet,
+  Plus,
+  Minus,
+  Gift,
 } from 'lucide-react'
 import { PageHeader } from '@/components/common/page-header'
 import { EmptyState } from '@/components/common/misc'
@@ -39,7 +43,15 @@ import {
 } from '@/components/ui/dialog'
 import { useToast } from '@/components/ui/use-toast'
 import { cn } from '@/lib/utils'
-import { useT } from '@/i18n/i18n'
+import { useLang, useT } from '@/i18n/i18n'
+import {
+  useBillingSettings,
+  useClientBilling,
+  useClientGrant,
+  useClientTopup,
+  formatRubles,
+  type BillingTransaction,
+} from '@/api/billing'
 import {
   useClient,
   useClientAmneziaWG,
@@ -572,6 +584,194 @@ function AccessTab({ client }: { client: Client }) {
   )
 }
 
+// BillingTab shows a client's wallet + subscription and lets the operator top up
+// / adjust the balance and grant subscription time (free of charge). It only
+// renders when payments are enabled in Settings.
+function BillingTab({ client }: { client: Client }) {
+  const t = useT()
+  const { lang } = useLang()
+  const { toast } = useToast()
+  const billing = useClientBilling(client.id)
+  const settings = useBillingSettings().data
+  const topup = useClientTopup(client.id)
+  const grant = useClientGrant(client.id)
+  const [amount, setAmount] = useState('')
+  const [note, setNote] = useState('')
+
+  const fmtDate = (iso: string) =>
+    iso
+      ? new Date(iso).toLocaleString(lang === 'ru' ? 'ru-RU' : 'en-US', { dateStyle: 'medium', timeStyle: 'short' })
+      : '—'
+
+  const b = billing.data
+
+  function applyAdjust(sign: 1 | -1) {
+    const k = Math.round(parseFloat(amount.replace(',', '.')) * 100)
+    if (!Number.isFinite(k) || k <= 0) {
+      toast({ title: t('clientDetail.billing.failed'), variant: 'destructive' })
+      return
+    }
+    topup.mutate(
+      { kopecks: sign * k, detail: note.trim() || undefined },
+      {
+        onSuccess: () => {
+          toast({ title: t('clientDetail.billing.applied') })
+          setAmount('')
+          setNote('')
+        },
+        onError: () => toast({ title: t('clientDetail.billing.failed'), variant: 'destructive' }),
+      },
+    )
+  }
+
+  function grantTariff(tariff: string) {
+    grant.mutate(
+      { tariff },
+      {
+        onSuccess: () => toast({ title: t('clientDetail.billing.applied') }),
+        onError: () => toast({ title: t('clientDetail.billing.failed'), variant: 'destructive' }),
+      },
+    )
+  }
+
+  const tariffs = settings
+    ? [
+        { key: 'week', label: t('settings.billing.week'), kopecks: settings.tariff_week_kopecks },
+        { key: 'month', label: t('settings.billing.month'), kopecks: settings.tariff_month_kopecks },
+        { key: 'year', label: t('settings.billing.year'), kopecks: settings.tariff_year_kopecks },
+      ]
+    : []
+
+  const status = (() => {
+    if (b?.active) return { text: t('clientDetail.billing.statusActive', { date: fmtDate(b.active_until) }), variant: 'success' as const }
+    if (b?.active_until) return { text: t('clientDetail.billing.statusExpired', { date: fmtDate(b.active_until) }), variant: 'destructive' as const }
+    return { text: t('clientDetail.billing.statusNone'), variant: 'secondary' as const }
+  })()
+
+  return (
+    <div className="grid gap-6 lg:grid-cols-2">
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Wallet className="h-4 w-4" />
+            {t('clientDetail.billing.title')}
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-5">
+          {billing.isLoading ? (
+            <Skeleton className="h-24" />
+          ) : (
+            <>
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="text-2xl font-semibold tabular-nums">{formatRubles(b?.balance_kopecks ?? 0)}</div>
+                <Badge variant={status.variant}>{status.text}</Badge>
+                {b?.managed && (
+                  <span className="text-xs text-muted-foreground">{t('clientDetail.billing.managed')}</span>
+                )}
+              </div>
+
+              {/* Adjust balance */}
+              <div className="space-y-2">
+                <Label className="text-xs text-muted-foreground">{t('clientDetail.billing.adjust')}</Label>
+                <div className="flex flex-wrap items-end gap-2">
+                  <div className="w-28 space-y-1">
+                    <Label htmlFor="adj-amount" className="text-[11px] text-muted-foreground">
+                      {t('clientDetail.billing.amount')}
+                    </Label>
+                    <Input
+                      id="adj-amount"
+                      inputMode="decimal"
+                      value={amount}
+                      onChange={(e) => setAmount(e.target.value)}
+                    />
+                  </div>
+                  <Input
+                    className="min-w-[8rem] flex-1"
+                    placeholder={t('clientDetail.billing.note')}
+                    value={note}
+                    onChange={(e) => setNote(e.target.value)}
+                  />
+                  <Button size="sm" onClick={() => applyAdjust(1)} disabled={topup.isPending}>
+                    <Plus className="h-4 w-4" />
+                    {t('clientDetail.billing.credit')}
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={() => applyAdjust(-1)} disabled={topup.isPending}>
+                    <Minus className="h-4 w-4" />
+                    {t('clientDetail.billing.debit')}
+                  </Button>
+                </div>
+              </div>
+
+              {/* Grant subscription */}
+              <div className="space-y-2">
+                <Label className="text-xs text-muted-foreground">{t('clientDetail.billing.grant')}</Label>
+                <div className="flex flex-wrap gap-2">
+                  {tariffs.map((tf) => (
+                    <Button
+                      key={tf.key}
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => grantTariff(tf.key)}
+                      disabled={grant.isPending}
+                    >
+                      <Gift className="h-4 w-4" />
+                      {tf.label}
+                    </Button>
+                  ))}
+                </div>
+                <p className="text-xs text-muted-foreground">{t('clientDetail.billing.grantHint')}</p>
+              </div>
+            </>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* History */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base">{t('clientDetail.billing.history')}</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {billing.isLoading ? (
+            <Skeleton className="h-40" />
+          ) : b && b.transactions.length > 0 ? (
+            <ul className="divide-y text-sm">
+              {b.transactions.map((tx) => (
+                <li key={tx.id} className="flex items-center justify-between gap-3 py-2">
+                  <div className="min-w-0">
+                    <div className="truncate">{txLabel(tx, t)}</div>
+                    <div className="text-xs text-muted-foreground">{fmtDate(tx.created_at)}</div>
+                  </div>
+                  <span
+                    className={cn(
+                      'shrink-0 tabular-nums',
+                      tx.amount_kopecks > 0 ? 'text-success' : tx.amount_kopecks < 0 ? 'text-destructive' : 'text-muted-foreground',
+                    )}
+                  >
+                    {tx.amount_kopecks > 0 ? '+' : ''}
+                    {formatRubles(tx.amount_kopecks)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-sm text-muted-foreground">{t('clientDetail.billing.historyEmpty')}</p>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  )
+}
+
+// txLabel renders a ledger entry's human description with any Stars/tariff detail.
+function txLabel(tx: BillingTransaction, t: (k: string, v?: Record<string, string | number>) => string): string {
+  const base = t(`billing.tx.${tx.kind}`)
+  if (tx.kind === 'topup' && tx.stars) return `${base} (${tx.stars} ⭐)`
+  if (tx.kind === 'purchase' && tx.tariff) return `${base}: ${tx.tariff}`
+  if (tx.detail) return `${base} — ${tx.detail}`
+  return base
+}
+
 export default function ClientDetailPage() {
   const params = useParams<{ id: string }>()
   const id = Number(params.id)
@@ -583,6 +783,7 @@ export default function ClientDetailPage() {
   const toggle = useToggleClient(id)
   const del = useDeleteClient()
   const sendEmail = useSendClientEmail(id)
+  const billingOn = useBillingSettings().data?.enabled ?? false
 
   const [editOpen, setEditOpen] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
@@ -696,6 +897,7 @@ export default function ClientDetailPage() {
             <TabsList>
               <TabsTrigger value="connection">{t('clientDetail.tab.connection')}</TabsTrigger>
               <TabsTrigger value="access">{t('clientDetail.tab.access')}</TabsTrigger>
+              {billingOn && <TabsTrigger value="billing">{t('clientDetail.tab.billing')}</TabsTrigger>}
             </TabsList>
             <TabsContent value="connection" className="mt-6">
               <ConnectionTab client={client} />
@@ -703,6 +905,11 @@ export default function ClientDetailPage() {
             <TabsContent value="access" className="mt-6">
               <AccessTab client={client} />
             </TabsContent>
+            {billingOn && (
+              <TabsContent value="billing" className="mt-6">
+                <BillingTab client={client} />
+              </TabsContent>
+            )}
           </Tabs>
 
           <EditClientDialog client={client} open={editOpen} onOpenChange={setEditOpen} />

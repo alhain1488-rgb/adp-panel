@@ -12,6 +12,7 @@ import (
 
 	"github.com/adp/panel/internal/auth"
 	"github.com/adp/panel/internal/backup"
+	"github.com/adp/panel/internal/billing"
 	"github.com/adp/panel/internal/clients"
 	"github.com/adp/panel/internal/config"
 	"github.com/adp/panel/internal/crypto"
@@ -28,7 +29,7 @@ import (
 )
 
 // version is the backend build version; kept in sync with the frontend APP_VERSION.
-const version = "0.9.10.0"
+const version = "0.9.11.0"
 
 func main() {
 	logger := logging.New()
@@ -61,7 +62,9 @@ func main() {
 	subscriptionSvc := subscription.NewService(st, clientsSvc)
 	syncSvc := syncpkg.NewService(st, serversSvc, clientsSvc)
 	backupSvc := backup.NewService(database, cfg.DBPath, cfg.EncryptionKey, version)
+	billingSvc := billing.NewService(st, syncSvc, logger)
 	telegramSvc := backup.NewTelegram(backupSvc, st, cipher, logger)
+	telegramSvc.SetBilling(billingSvc)
 	mailer := mail.NewMailer(st, cipher)
 	emailBackupSvc := backup.NewEmail(backupSvc, mailer, st, cipher, logger)
 
@@ -86,6 +89,7 @@ func main() {
 		Backup:       backupSvc,
 		Telegram:     telegramSvc,
 		EmailBackup:  emailBackupSvc,
+		Billing:      billingSvc,
 		Mail:         mailer,
 		Logger:       logger,
 		Version:      version,
@@ -115,6 +119,9 @@ func main() {
 	// Scheduled backups run until shutdown.
 	go telegramSvc.RunScheduler(ctx)
 	go emailBackupSvc.RunScheduler(ctx)
+
+	// Billing reconciler auto-suspends managed clients whose subscription lapsed.
+	go billingSvc.RunReconciler(ctx)
 
 	// Poll Telegram for clients opening their "/start" deep link; deliver their
 	// config the moment they link, so the operator needn't do anything.

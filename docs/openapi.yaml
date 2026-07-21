@@ -19,6 +19,7 @@ tags:
   - name: Dashboard
   - name: Logs
   - name: Settings
+  - name: Billing
   - name: Health
 
 security:
@@ -597,6 +598,90 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
 
+  /api/clients/{id}/billing:
+    parameters:
+      - $ref: '#/components/parameters/IdPath'
+    get:
+      tags: [Billing]
+      summary: Get a client's wallet and subscription
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Client billing
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClientBilling'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/clients/{id}/billing/topup:
+    parameters:
+      - $ref: '#/components/parameters/IdPath'
+    post:
+      tags: [Billing]
+      summary: Operator wallet adjustment (kopecks; positive credit, negative debit)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [kopecks]
+              properties:
+                kopecks:
+                  type: integer
+                  format: int64
+                detail:
+                  type: string
+      responses:
+        '200':
+          description: Client billing
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClientBilling'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/clients/{id}/billing/grant:
+    parameters:
+      - $ref: '#/components/parameters/IdPath'
+    post:
+      tags: [Billing]
+      summary: Grant subscription time without charging the wallet
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: Provide either tariff or days.
+              properties:
+                tariff:
+                  type: string
+                  enum: [week, month, year]
+                days:
+                  type: integer
+      responses:
+        '200':
+          description: Client billing
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClientBilling'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
   # ---------------------------------------------------------- Subscription
   /sub/{token}:
     parameters:
@@ -689,6 +774,39 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Settings'
+
+  # -------------------------------------------------------------- Billing
+  /api/billing/settings:
+    get:
+      tags: [Billing]
+      summary: Get billing settings
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Billing settings
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BillingSettings'
+    put:
+      tags: [Billing]
+      summary: Update billing settings
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BillingSettings'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BillingSettings'
 
   # -------------------------------------------------------------- Backup
   /api/backup/export:
@@ -1517,3 +1635,37 @@ components:
         last_at: { type: string }
         last_error: { type: string }
         last_ok: { type: boolean }
+
+    # ---- Billing ----
+    # Amounts are in kopecks; 100 kopecks = 1 RUB.
+    BillingSettings:
+      type: object
+      properties:
+        enabled: { type: boolean }
+        tariff_week_kopecks: { type: integer, format: int64 }
+        tariff_month_kopecks: { type: integer, format: int64 }
+        tariff_year_kopecks: { type: integer, format: int64 }
+        star_rate_kopecks: { type: integer, format: int64, description: "Kopecks credited per one Telegram Star" }
+        support_contact: { type: string }
+
+    BillingTransaction:
+      type: object
+      properties:
+        id: { type: integer, format: int64 }
+        kind: { type: string, description: "topup | purchase | adjust | refund | grant" }
+        method: { type: string, description: "stars | card | sbp | crypto | manual | wallet" }
+        amount_kopecks: { type: integer, format: int64, description: "signed: +credit, -debit" }
+        stars: { type: integer, format: int64 }
+        tariff: { type: string }
+        detail: { type: string }
+        created_at: { type: string, format: date-time }
+
+    ClientBilling:
+      type: object
+      properties:
+        client_id: { type: integer, format: int64 }
+        balance_kopecks: { type: integer, format: int64 }
+        active_until: { type: string, description: "RFC3339 expiry, or empty" }
+        active: { type: boolean }
+        managed: { type: boolean }
+        transactions: { type: array, items: { $ref: '#/components/schemas/BillingTransaction' } }
