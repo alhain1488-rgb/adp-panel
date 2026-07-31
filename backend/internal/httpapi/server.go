@@ -124,9 +124,10 @@ func Router(d Deps) http.Handler {
 
 		var bilh *billingHandler
 		if d.Billing != nil {
-			bilh = &billingHandler{svc: d.Billing, store: d.Store}
+			bilh = &billingHandler{svc: d.Billing, store: d.Store, telegram: d.Telegram}
 			r.Get("/api/billing/settings", bilh.getSettings)
 			r.Put("/api/billing/settings", bilh.putSettings)
+			r.Get("/api/billing/stars", bilh.stars)
 		}
 
 		if d.Backup != nil {

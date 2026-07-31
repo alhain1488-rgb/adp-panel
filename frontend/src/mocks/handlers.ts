@@ -880,6 +880,18 @@ export const handlers = [
   }),
 
   // ---- Billing ----
+  http.get('/api/billing/stars', ({ request }) => {
+    if (!requireAuth(request)) return unauthorized()
+    return json({
+      configured: true,
+      balance_stars: 1420,
+      transactions: [
+        { id: 'mock_tx_3', stars: 154, incoming: true, created_at: new Date(Date.now() - 3600_000).toISOString(), peer: 'user' },
+        { id: 'mock_tx_2', stars: 100, incoming: true, created_at: new Date(Date.now() - 86400_000).toISOString(), peer: 'user' },
+        { id: 'mock_tx_1', stars: 50, incoming: false, created_at: new Date(Date.now() - 172800_000).toISOString(), peer: 'user' },
+      ],
+    })
+  }),
   http.get('/api/billing/settings', ({ request }) => {
     if (!requireAuth(request)) return unauthorized()
     return json(billingSettings)

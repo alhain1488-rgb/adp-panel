@@ -51,6 +51,29 @@ export function formatRubles(kopecks: number): string {
   return neg ? `−${body}` : body
 }
 
+// The bot's own Star position, read live from Telegram. Separate from the wallet
+// ledger: that records what clients were credited, this is what Telegram holds.
+export interface StarTransaction {
+  id: string
+  stars: number
+  incoming: boolean
+  created_at: string
+  peer?: string
+}
+
+export interface StarLedger {
+  configured: boolean
+  balance_stars: number
+  transactions: StarTransaction[]
+}
+
+export function useStarLedger() {
+  return useQuery({
+    queryKey: ['billing', 'stars'],
+    queryFn: () => api.get<StarLedger>('/api/billing/stars'),
+  })
+}
+
 const BILLING_SETTINGS_KEY = ['billing', 'settings']
 
 export function useBillingSettings() {

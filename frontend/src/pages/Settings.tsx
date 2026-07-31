@@ -61,11 +61,12 @@ import {
 import { useBlocklist, useUpdateBlocklist } from '@/api/blocklist'
 import {
   useBillingSettings,
+  useStarLedger,
   useUpdateBillingSettings,
   type BillingSettings,
 } from '@/api/billing'
 import { cn } from '@/lib/utils'
-import { useT } from '@/i18n/i18n'
+import { useLang, useT } from '@/i18n/i18n'
 
 export default function SettingsPage() {
   const t = useT()
@@ -179,8 +180,57 @@ function BlocklistCard() {
 }
 
 // ---- Billing ----
-// Operator-tunable payments: tariff prices (₽), the Star→₽ rate and the support
-// contact. Amounts are edited in rubles here and stored in kopecks by the API.
+// StarBalance shows what Telegram is actually holding for the bot. It is
+// deliberately read-only and separate from the wallet ledger: the ledger records
+// what clients were credited in rubles, this is the Stars themselves.
+function StarBalance() {
+  const t = useT()
+  const { lang } = useLang()
+  const { data, isLoading, isError } = useStarLedger()
+
+  const fmtDate = (iso: string) =>
+    new Date(iso).toLocaleString(lang === 'ru' ? 'ru-RU' : 'en-US', { dateStyle: 'medium', timeStyle: 'short' })
+
+  return (
+    <div className="space-y-2 rounded-md border p-3">
+      <Label>{t('settings.billing.stars')}</Label>
+      {isLoading ? (
+        <Skeleton className="h-16" />
+      ) : isError ? (
+        <p className="text-xs text-destructive">{t('settings.billing.starsFailed')}</p>
+      ) : !data?.configured ? (
+        <p className="text-xs text-muted-foreground">{t('settings.billing.starsNone')}</p>
+      ) : (
+        <>
+          <div className="text-2xl font-semibold tabular-nums">{data.balance_stars} ⭐</div>
+          {data.transactions.length > 0 && (
+            <div className="space-y-1 pt-1">
+              <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                {t('settings.billing.starsRecent')}
+              </p>
+              <ul className="divide-y text-sm">
+                {data.transactions.slice(0, 8).map((tx) => (
+                  <li key={tx.id} className="flex items-center justify-between gap-3 py-1.5">
+                    <span className="text-xs text-muted-foreground">{fmtDate(tx.created_at)}</span>
+                    <span className={cn('tabular-nums', tx.incoming ? 'text-success' : 'text-destructive')}>
+                      {tx.incoming ? '+' : '−'}
+                      {tx.stars} ⭐
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </>
+      )}
+      <p className="text-xs text-muted-foreground">{t('settings.billing.starsHint')}</p>
+    </div>
+  )
+}
+
+// BillingCard holds the operator-tunable payments: tariff prices (₽), the Star→₽
+// rate and the support contact. Amounts are edited in rubles here and stored in
+// kopecks by the API.
 function BillingCard() {
   const t = useT()
   const { toast } = useToast()
@@ -307,6 +357,8 @@ function BillingCard() {
               />
               <p className="text-xs text-muted-foreground">{t('settings.billing.starRateHint')}</p>
             </div>
+
+            <StarBalance />
 
             <div className="space-y-2">
               <Label htmlFor="support">{t('settings.billing.support')}</Label>

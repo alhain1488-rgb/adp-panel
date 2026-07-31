@@ -6,6 +6,7 @@ import (
 	"strconv"
 
 	"github.com/adp/panel/internal/auth"
+	"github.com/adp/panel/internal/backup"
 	"github.com/adp/panel/internal/billing"
 	"github.com/adp/panel/internal/store"
 )
@@ -13,8 +14,9 @@ import (
 // billingHandler serves the operator-facing billing endpoints: global settings
 // (tariffs, Star rate, support contact) and per-client wallet actions.
 type billingHandler struct {
-	svc   *billing.Service
-	store *store.Store
+	svc      *billing.Service
+	store    *store.Store
+	telegram *backup.Telegram
 }
 
 func (h *billingHandler) getSettings(w http.ResponseWriter, r *http.Request) {
@@ -135,6 +137,23 @@ func (h *billingHandler) clientGrant(w http.ResponseWriter, r *http.Request) {
 	recordAudit(r.Context(), h.store, r, adminID, "billing.grant", "client", id,
 		`{"days":`+strconv.Itoa(days)+`}`)
 	h.writeClientBilling(w, r, id)
+}
+
+// stars reports the bot's own Telegram Stars position. Paid Stars accrue to the
+// bot, not to the panel, so this is read live from the Bot API rather than from
+// our ledger — the two answer different questions (what clients were credited
+// versus what Telegram is actually holding).
+func (h *billingHandler) stars(w http.ResponseWriter, r *http.Request) {
+	if h.telegram == nil {
+		writeJSON(w, http.StatusOK, backup.StarLedger{})
+		return
+	}
+	ledger, err := h.telegram.StarBalance(r.Context(), 20)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "Telegram did not return the Star balance")
+		return
+	}
+	writeJSON(w, http.StatusOK, ledger)
 }
 
 // clientExempt grants or revokes lifetime free access — the client is then never

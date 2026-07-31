@@ -682,6 +682,28 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
 
+  /api/billing/stars:
+    get:
+      tags: [Billing]
+      summary: The bot's own Telegram Stars balance and recent Star transactions
+      description: >
+        Read live from the Bot API, not from the wallet ledger — the ledger records
+        what clients were credited in rubles, this is the Stars Telegram actually
+        holds for the bot. Newly earned Stars are locked for 21 days (the refund
+        window); the Bot API does not break that down. Returns configured=false
+        when no bot token is set.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Star ledger
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StarLedger'
+        '502':
+          description: Telegram did not return the balance
+
   /api/clients/{id}/billing/exempt:
     parameters:
       - $ref: '#/components/parameters/IdPath'
@@ -1729,6 +1751,24 @@ components:
             Anyone who opens the bot may buy a subscription. A client is created
             for them on their first move to pay, granted every enabled inbound and
             left disabled until the purchase lands.
+
+    StarLedger:
+      type: object
+      properties:
+        configured: { type: boolean, description: "a bot token is set" }
+        balance_stars: { type: integer, format: int64 }
+        transactions:
+          type: array
+          items: { $ref: '#/components/schemas/StarTransaction' }
+
+    StarTransaction:
+      type: object
+      properties:
+        id: { type: string }
+        stars: { type: integer, format: int64 }
+        incoming: { type: boolean, description: "false = refund or withdrawal leaving the bot" }
+        created_at: { type: string, format: date-time }
+        peer: { type: string, description: "counterparty type as Telegram reports it" }
 
     BillingTransaction:
       type: object
