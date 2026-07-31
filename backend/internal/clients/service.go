@@ -129,6 +129,44 @@ func (s *Service) Create(ctx context.Context, in Input) (*store.Client, error) {
 	})
 }
 
+// CreateSelfSignup registers someone who found the bot on their own, at the
+// moment they first move to pay. The client is created **disabled** and without a
+// subscription — until a purchase lands they appear in no engine config and have
+// no access — but is already granted every enabled inbound, so buying is all it
+// takes to switch access on. The Telegram chat is bound straight away, which is
+// what makes signup idempotent: a second attempt from the same chat finds the
+// existing client instead of making another.
+func (s *Service) CreateSelfSignup(ctx context.Context, name, chatID, username string) (*store.Client, error) {
+	id, password, token, err := genCredentials()
+	if err != nil {
+		return nil, err
+	}
+	tgToken, err := randToken(12)
+	if err != nil {
+		return nil, err
+	}
+	c, err := s.store.CreateClient(ctx, store.ClientParams{
+		Name:              name,
+		UUID:              id,
+		Password:          password,
+		SubscriptionToken: token,
+		Enabled:           false,
+		Remark:            "self-signup via Telegram",
+		TelegramLinkToken: tgToken,
+	})
+	if err != nil {
+		return nil, err
+	}
+	inboundIDs, err := s.store.ListAllEnabledInboundIDs(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.store.SetClientInbounds(ctx, c.ID, inboundIDs); err != nil {
+		return nil, err
+	}
+	return s.store.LinkClientTelegram(ctx, tgToken, chatID, username)
+}
+
 // EnsureTelegramLinkToken returns the client's stable Telegram deep-link token,
 // generating and persisting one on first use (older clients predate the field).
 func (s *Service) EnsureTelegramLinkToken(ctx context.Context, id int64) (string, error) {

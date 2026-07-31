@@ -158,6 +158,11 @@ export const dict: Record<string, { en: string; ru: string }> = {
     en: "Off by default — the panel stays personal-use and no client is ever auto-suspended.",
     ru: "По умолчанию выключено — панель остаётся для личного использования, никого не приостанавливает.",
   },
+  "settings.billing.selfSignup": { en: "Open sign-up in the bot", ru: "Самостоятельная покупка в боте" },
+  "settings.billing.selfSignupHint": {
+    en: "Anyone who opens the bot can buy a subscription — an account is created for them when they first move to pay, with access to every enabled inbound. Off: the bot only serves clients you created.",
+    ru: "Любой, кто откроет бота, сможет купить подписку — аккаунт создастся при первом шаге к оплате, с доступом ко всем включённым инбаундам. Выключено: бот обслуживает только созданных вами клиентов.",
+  },
   "settings.billing.tariffs": { en: "Tariffs (₽)", ru: "Тарифы (₽)" },
   "settings.billing.week": { en: "Week", ru: "Неделя" },
   "settings.billing.month": { en: "Month", ru: "Месяц" },

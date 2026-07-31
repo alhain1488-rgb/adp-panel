@@ -188,12 +188,21 @@ function BillingCard() {
   const update = useUpdateBillingSettings()
 
   const rub = (kopecks: number) => String(kopecks / 100)
-  const [form, setForm] = useState({ enabled: false, week: '', month: '', year: '', starRate: '', support: '' })
+  const [form, setForm] = useState({
+    enabled: false,
+    selfSignup: false,
+    week: '',
+    month: '',
+    year: '',
+    starRate: '',
+    support: '',
+  })
 
   useEffect(() => {
     if (data)
       setForm({
         enabled: data.enabled,
+        selfSignup: data.self_signup_enabled,
         week: rub(data.tariff_week_kopecks),
         month: rub(data.tariff_month_kopecks),
         year: rub(data.tariff_year_kopecks),
@@ -217,6 +226,7 @@ function BillingCard() {
       tariff_year_kopecks: kopecks(form.year, data?.tariff_year_kopecks ?? 200000),
       star_rate_kopecks: kopecks(form.starRate, data?.star_rate_kopecks ?? 130) || (data?.star_rate_kopecks ?? 130),
       support_contact: form.support.trim(),
+      self_signup_enabled: form.selfSignup,
     }
     update.mutate(payload, {
       onSuccess: () => toast({ title: t('settings.billing.saved') }),
@@ -261,6 +271,19 @@ function BillingCard() {
                 id="billing-enabled"
                 checked={form.enabled}
                 onCheckedChange={(v) => setForm((f) => ({ ...f, enabled: v }))}
+              />
+            </div>
+
+            <div className="flex items-center justify-between gap-4 rounded-md border p-3">
+              <div>
+                <Label htmlFor="billing-selfsignup">{t('settings.billing.selfSignup')}</Label>
+                <p className="mt-1 text-xs text-muted-foreground">{t('settings.billing.selfSignupHint')}</p>
+              </div>
+              <Switch
+                id="billing-selfsignup"
+                checked={form.selfSignup}
+                disabled={!form.enabled}
+                onCheckedChange={(v) => setForm((f) => ({ ...f, selfSignup: v }))}
               />
             </div>
 
@@ -907,7 +930,8 @@ function SmtpCard() {
   useEffect(() => {
     if (data) {
       setForm({
-        enabled: data.enabled, provider: data.provider || 'smtp', host: data.host, port: data.port || 587,
+        enabled: data.enabled,
+        provider: data.provider || 'smtp', host: data.host, port: data.port || 587,
         username: data.username, password: '', from: data.from, security: data.security, resend_key: '',
       })
     }

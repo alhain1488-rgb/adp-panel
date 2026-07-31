@@ -29,7 +29,7 @@ import (
 )
 
 // version is the backend build version; kept in sync with the frontend APP_VERSION.
-const version = "0.9.13.1"
+const version = "0.9.14.0"
 
 func main() {
 	logger := logging.New()
@@ -66,6 +66,7 @@ func main() {
 	telegramSvc := backup.NewTelegram(backupSvc, st, cipher, logger)
 	telegramSvc.SetBilling(billingSvc)
 	billingSvc.SetStarRefunder(telegramSvc)
+	telegramSvc.SetSignup(clientsSvc)
 	mailer := mail.NewMailer(st, cipher)
 	emailBackupSvc := backup.NewEmail(backupSvc, mailer, st, cipher, logger)
 

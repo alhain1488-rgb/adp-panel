@@ -100,6 +100,25 @@ func (s *Store) ListEnabledInboundsByServer(ctx context.Context, serverID int64)
 	return out, nil
 }
 
+// ListAllEnabledInboundIDs returns the ids of every enabled inbound across all
+// servers. Used to grant a self-signed-up client everything currently on offer.
+func (s *Store) ListAllEnabledInboundIDs(ctx context.Context) ([]int64, error) {
+	rows, err := s.db.QueryContext(ctx, "SELECT id FROM inbounds WHERE enabled = 1 ORDER BY id ASC")
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	out := []int64{}
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out = append(out, id)
+	}
+	return out, rows.Err()
+}
+
 // GetInbound returns an inbound by id.
 func (s *Store) GetInbound(ctx context.Context, id int64) (*Inbound, error) {
 	return scanInbound(s.db.QueryRowContext(ctx, inboundSelect+" WHERE i.id = ?", id))

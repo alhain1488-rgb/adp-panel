@@ -32,14 +32,14 @@ var starTopupPresets = []int64{50, 100, 250, 500, 1000}
 
 // handleBillingText handles the billing reply-keyboard buttons and slash commands
 // for an already-billing-enabled bot. Returns true if it consumed the message.
-func (t *Telegram) handleBillingText(ctx context.Context, chatID, text string, deliver func(context.Context, *store.Client)) bool {
+func (t *Telegram) handleBillingText(ctx context.Context, chatID, username, text string, deliver func(context.Context, *store.Client)) bool {
 	switch billingCommand(text) {
 	case "status":
 		t.sendStatus(ctx, chatID)
 	case "topup":
-		t.sendTopupMethods(ctx, chatID)
+		t.sendTopupMethods(ctx, chatID, username)
 	case "buy":
-		t.sendTariffs(ctx, chatID)
+		t.sendTariffs(ctx, chatID, username)
 	case "history":
 		t.sendHistory(ctx, chatID)
 	case "support":
@@ -97,6 +97,73 @@ func (t *Telegram) linkedClient(ctx context.Context, chatID string) (*store.Clie
 	return c, true
 }
 
+// selfSignupOn reports whether strangers may buy a subscription on their own.
+func (t *Telegram) selfSignupOn(ctx context.Context) bool {
+	if t.billing == nil {
+		return false
+	}
+	cfg, err := t.billing.GetSettings(ctx)
+	return err == nil && cfg.SelfSignupEnabled
+}
+
+// payingClient resolves the client for a purchase, registering a new one when a
+// stranger reaches this point and self-signup is on. Signup happens here rather
+// than on /start so that merely opening the bot leaves no trace in the client
+// list — only an actual move to pay does.
+func (t *Telegram) payingClient(ctx context.Context, chatID, username string) (*store.Client, bool) {
+	if c, err := t.store.GetClientByTelegramChatID(ctx, chatID); err == nil {
+		return c, true
+	}
+	if !t.selfSignupOn(ctx) || t.signup == nil {
+		return t.linkedClient(ctx, chatID)
+	}
+	c, err := t.signup.CreateSelfSignup(ctx, signupName(chatID, username), chatID, username)
+	if err != nil {
+		t.logger.Warn("billing: self-signup failed", "chat", chatID, "err", err)
+		_ = t.SendMessageTo(ctx, chatID, withFooter(
+			"Не удалось создать аккаунт. Попробуйте позже. (Could not create your account — try again later.)"))
+		return nil, false
+	}
+	t.logger.Info("billing: self-signup", "client", c.ID, "chat", chatID)
+	_ = t.SendMessageTo(ctx, chatID, withFooter(
+		"👤 Аккаунт создан. Доступ включится сразу после оплаты подписки.\n"+
+			"(Account created — access switches on as soon as you buy a subscription.)"))
+	return c, true
+}
+
+// signupName builds a readable client name from the Telegram handle, falling
+// back to the chat id when the user has none. Names need not be unique.
+func signupName(chatID, username string) string {
+	if u := strings.TrimSpace(username); u != "" {
+		return "tg:@" + u
+	}
+	return "tg:" + chatID
+}
+
+// sendWelcome greets a stranger with the plans on offer. Deliberately creates
+// nothing: tapping a plan is what registers them (see payingClient).
+func (t *Telegram) sendWelcome(ctx context.Context, chatID string) {
+	tariffs, err := t.billing.Tariffs(ctx)
+	if err != nil {
+		return
+	}
+	rows := make([][]inlineButton, 0, len(tariffs)+1)
+	for _, tf := range tariffs {
+		rows = append(rows, []inlineButton{{
+			Text:         fmt.Sprintf("%s — %s", tariffTitleRU(tf.Key), formatRubles(tf.PriceKopecks)),
+			CallbackData: "buy:" + tf.Key,
+		}})
+	}
+	rows = append(rows, []inlineButton{{Text: topupButtonLabel, CallbackData: "pay:stars"}})
+	_ = t.sendMessageMarkup(ctx, chatID, withFooter(
+		"<b>👋 Привет! Здесь можно купить доступ к VPN.</b>\n\n"+
+			"Выберите тариф — аккаунт создастся автоматически, оплата проходит звёздами Telegram. "+
+			"Сразу после оплаты сюда придёт ваш конфиг.\n"+
+			"(Pick a plan — your account is created automatically and paid with Telegram Stars; "+
+			"your config arrives here right after payment.)"),
+		inlineKeyboardJSON(rows))
+}
+
 // sendStatus reports the client's wallet balance and subscription state.
 func (t *Telegram) sendStatus(ctx context.Context, chatID string) {
 	c, ok := t.linkedClient(ctx, chatID)
@@ -124,8 +191,8 @@ func (t *Telegram) sendStatus(ctx context.Context, chatID string) {
 }
 
 // sendTopupMethods shows the payment-method chooser (Stars now; the rest soon).
-func (t *Telegram) sendTopupMethods(ctx context.Context, chatID string) {
-	if _, ok := t.linkedClient(ctx, chatID); !ok {
+func (t *Telegram) sendTopupMethods(ctx context.Context, chatID, username string) {
+	if _, ok := t.payingClient(ctx, chatID, username); !ok {
 		return
 	}
 	kb := inlineKeyboardJSON([][]inlineButton{
@@ -223,8 +290,8 @@ func (t *Telegram) sendStarInvoice(ctx context.Context, chatID string, c *store.
 }
 
 // sendTariffs shows the subscription plans as buttons plus the current balance.
-func (t *Telegram) sendTariffs(ctx context.Context, chatID string) {
-	c, ok := t.linkedClient(ctx, chatID)
+func (t *Telegram) sendTariffs(ctx context.Context, chatID, username string) {
+	c, ok := t.payingClient(ctx, chatID, username)
 	if !ok {
 		return
 	}
@@ -295,6 +362,7 @@ func (t *Telegram) handleCallback(ctx context.Context, cq *tgCallbackQuery, deli
 		return
 	}
 	chatID := strconv.FormatInt(cq.Message.Chat.ID, 10)
+	username := cq.From.Username
 	if !t.billingOn(ctx) {
 		t.answerCallback(ctx, cq.ID, "Оплата сейчас недоступна. (Payments are unavailable.)", true)
 		return
@@ -303,14 +371,14 @@ func (t *Telegram) handleCallback(ctx context.Context, cq *tgCallbackQuery, deli
 	switch {
 	case data == "pay:stars":
 		t.answerCallback(ctx, cq.ID, "", false)
-		c, ok := t.linkedClient(ctx, chatID)
+		c, ok := t.payingClient(ctx, chatID, username)
 		if !ok {
 			return
 		}
 		t.sendStarAmounts(ctx, chatID, c)
 	case strings.HasPrefix(data, "pay:stars:"):
 		t.answerCallback(ctx, cq.ID, "", false)
-		c, ok := t.linkedClient(ctx, chatID)
+		c, ok := t.payingClient(ctx, chatID, username)
 		if !ok {
 			return
 		}
@@ -323,7 +391,7 @@ func (t *Telegram) handleCallback(ctx context.Context, cq *tgCallbackQuery, deli
 		t.answerCallback(ctx, cq.ID, "Скоро — пока доступны Telegram Stars. (Coming soon — use Telegram Stars for now.)", true)
 	case strings.HasPrefix(data, "buy:"):
 		t.answerCallback(ctx, cq.ID, "", false)
-		t.handleBuy(ctx, chatID, strings.TrimPrefix(data, "buy:"), deliver)
+		t.handleBuy(ctx, chatID, username, strings.TrimPrefix(data, "buy:"), deliver)
 	default:
 		t.answerCallback(ctx, cq.ID, "", false)
 	}
@@ -331,8 +399,8 @@ func (t *Telegram) handleCallback(ctx context.Context, cq *tgCallbackQuery, deli
 
 // handleBuy charges a tariff to the client's wallet and confirms, or explains a
 // shortfall and offers a top-up.
-func (t *Telegram) handleBuy(ctx context.Context, chatID, key string, deliver func(context.Context, *store.Client)) {
-	c, ok := t.linkedClient(ctx, chatID)
+func (t *Telegram) handleBuy(ctx context.Context, chatID, username, key string, deliver func(context.Context, *store.Client)) {
+	c, ok := t.payingClient(ctx, chatID, username)
 	if !ok {
 		return
 	}
@@ -348,7 +416,7 @@ func (t *Telegram) handleBuy(ctx context.Context, chatID, key string, deliver fu
 			"Недостаточно средств: тариф «%s» стоит %s, на балансе %s. Пополните баланс.\n"+
 				"(Insufficient funds — top up your balance.)",
 			tariffTitleRU(key), formatRubles(tariff.PriceKopecks), formatRubles(before.BalanceKopecks))))
-		t.sendTopupMethods(ctx, chatID)
+		t.sendTopupMethods(ctx, chatID, "")
 		return
 	}
 	if err != nil {
@@ -414,7 +482,7 @@ func (t *Telegram) handleSuccessfulPayment(ctx context.Context, msg *tgMessage, 
 		"✅ Баланс пополнен на %s (%d ⭐). Текущий баланс: <b>%s</b>.\n(Balance topped up.)",
 		formatRubles(credited), stars, formatRubles(newBal))))
 	// Offer to spend the fresh balance on a subscription.
-	t.sendTariffs(ctx, chatID)
+	t.sendTariffs(ctx, chatID, "")
 }
 
 // parseTopupPayload parses an invoice payload of the form "topup:<clientID>:<stars>".

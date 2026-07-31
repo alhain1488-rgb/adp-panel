@@ -34,6 +34,7 @@ const (
 	keyTariffYear   = "billing_tariff_year_kopecks"
 	keyStarRate     = "billing_star_rate_kopecks"
 	keySupport      = "billing_support_contact"
+	keySelfSignup   = "billing_selfsignup_enabled"
 	reconcileEvery  = 5 * time.Minute
 	reconcileWarmup = 20 * time.Second
 )
@@ -62,6 +63,10 @@ type Settings struct {
 	TariffYearKopecks  int64  `json:"tariff_year_kopecks"`
 	StarRateKopecks    int64  `json:"star_rate_kopecks"`
 	SupportContact     string `json:"support_contact"`
+	// SelfSignupEnabled lets anyone who opens the bot buy a subscription: a
+	// client is created for them on their first move to pay. Off by default —
+	// with it off the bot only serves clients the operator created.
+	SelfSignupEnabled bool `json:"self_signup_enabled"`
 }
 
 // Tariff is one purchasable subscription plan.
@@ -159,6 +164,10 @@ func (s *Service) GetSettings(ctx context.Context) (Settings, error) {
 	if support == "" {
 		support = defSupport
 	}
+	selfSignup, err := get(keySelfSignup)
+	if err != nil {
+		return Settings{}, err
+	}
 	return Settings{
 		Enabled:            enabled == "1",
 		TariffWeekKopecks:  week,
@@ -166,6 +175,7 @@ func (s *Service) GetSettings(ctx context.Context) (Settings, error) {
 		TariffYearKopecks:  year,
 		StarRateKopecks:    rate,
 		SupportContact:     support,
+		SelfSignupEnabled:  selfSignup == "1",
 	}, nil
 }
 
@@ -191,6 +201,10 @@ func (s *Service) SetSettings(ctx context.Context, in Settings) error {
 	if in.Enabled {
 		enabled = "1"
 	}
+	selfSignup := ""
+	if in.SelfSignupEnabled {
+		selfSignup = "1"
+	}
 	pairs := [][2]string{
 		{keyEnabled, enabled},
 		{keyTariffWeek, strconv.FormatInt(clampNonNeg(in.TariffWeekKopecks, defWeekKopecks), 10)},
@@ -198,6 +212,7 @@ func (s *Service) SetSettings(ctx context.Context, in Settings) error {
 		{keyTariffYear, strconv.FormatInt(clampNonNeg(in.TariffYearKopecks, defYearKopecks), 10)},
 		{keyStarRate, strconv.FormatInt(clampPos(in.StarRateKopecks, defStarRate), 10)},
 		{keySupport, in.SupportContact},
+		{keySelfSignup, selfSignup},
 	}
 	for _, p := range pairs {
 		if err := set(p[0], p[1]); err != nil {

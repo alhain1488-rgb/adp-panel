@@ -178,7 +178,7 @@ func (t *Telegram) handleTextMessage(ctx context.Context, u tgUpdate, deliver fu
 	}
 
 	// Billing reply-keyboard buttons and commands (balance, top-up, buy, …).
-	if t.billingOn(ctx) && t.handleBillingText(ctx, chatID, text, deliver) {
+	if t.billingOn(ctx) && t.handleBillingText(ctx, chatID, u.Message.From.Username, text, deliver) {
 		return
 	}
 
@@ -193,6 +193,13 @@ func (t *Telegram) handleTextMessage(ctx context.Context, u tgUpdate, deliver fu
 			if deliver != nil {
 				deliver(ctx, c)
 			}
+			return
+		}
+		// A stranger: offer the plans when self-signup is on, otherwise explain
+		// that access starts from the administrator's personal link. No client is
+		// created here — that waits until they actually move to pay.
+		if t.billingOn(ctx) && t.selfSignupOn(ctx) {
+			t.sendWelcome(ctx, chatID)
 			return
 		}
 		_ = t.SendMessageTo(ctx, chatID, withFooter(

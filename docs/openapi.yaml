@@ -1723,6 +1723,12 @@ components:
         tariff_year_kopecks: { type: integer, format: int64 }
         star_rate_kopecks: { type: integer, format: int64, description: "Kopecks credited per one Telegram Star" }
         support_contact: { type: string }
+        self_signup_enabled:
+          type: boolean
+          description: >
+            Anyone who opens the bot may buy a subscription. A client is created
+            for them on their first move to pay, granted every enabled inbound and
+            left disabled until the purchase lands.
 
     BillingTransaction:
       type: object

@@ -135,6 +135,7 @@ const billingSettings = {
   tariff_year_kopecks: 200000,
   star_rate_kopecks: 130,
   support_contact: '@solepytt',
+  self_signup_enabled: false,
 }
 interface MockBillingTx {
   id: number

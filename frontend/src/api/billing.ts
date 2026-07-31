@@ -10,6 +10,9 @@ export interface BillingSettings {
   tariff_year_kopecks: number
   star_rate_kopecks: number
   support_contact: string
+  // Lets strangers in the bot buy a subscription; an account is created for them
+  // on their first move to pay.
+  self_signup_enabled: boolean
 }
 
 // One wallet-ledger entry.

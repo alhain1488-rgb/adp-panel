@@ -71,14 +71,26 @@ type Telegram struct {
 	apiBase string
 	now     func() time.Time
 	billing *billing.Service // optional; enables the in-bot payment/menu flow
+	signup  Signup           // optional; enables self-signup for strangers
 
 	mu          sync.Mutex
 	botUsername string // cached getMe username; cleared when the token changes
 }
 
+// Signup registers a client for someone who found the bot on their own.
+// Satisfied by *clients.Service; kept as an interface so the bot needn't import
+// it (and so self-signup can simply be left unwired).
+type Signup interface {
+	CreateSelfSignup(ctx context.Context, name, chatID, username string) (*store.Client, error)
+}
+
 // SetBilling wires the billing engine into the bot, enabling the payment menu,
 // Stars invoices and top-up/purchase flows. Safe to leave unset (menu hidden).
 func (t *Telegram) SetBilling(b *billing.Service) { t.billing = b }
+
+// SetSignup wires client registration in, so strangers can buy a subscription
+// without the operator creating them first. Gated by the self-signup setting.
+func (t *Telegram) SetSignup(s Signup) { t.signup = s }
 
 // billingOn reports whether the in-bot payment flow should be offered.
 func (t *Telegram) billingOn(ctx context.Context) bool {

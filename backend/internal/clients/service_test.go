@@ -161,3 +161,86 @@ func TestRotateToken_Changes(t *testing.T) {
 		t.Error("token unchanged after rotate")
 	}
 }
+
+func TestCreateSelfSignup(t *testing.T) {
+	svc, st, ctx := newSvc(t)
+	srv, err := st.CreateServer(ctx, store.ServerParams{
+		Name: "n", Host: "example.net", SSHPort: 22, SSHUser: "root", SSHAuthMethod: "password",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	on1, err := st.CreateInbound(ctx, srv.ID, store.InboundParams{
+		Tag: "on1", Protocol: "vless", Listen: "0.0.0.0", Port: 443, Enabled: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	on2, err := st.CreateInbound(ctx, srv.ID, store.InboundParams{
+		Tag: "on2", Protocol: "trojan", Listen: "0.0.0.0", Port: 8443, Enabled: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A disabled inbound must not be handed out.
+	if _, err := st.CreateInbound(ctx, srv.ID, store.InboundParams{
+		Tag: "off", Protocol: "vmess", Listen: "0.0.0.0", Port: 9443, Enabled: false,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	c, err := svc.CreateSelfSignup(ctx, "tg:@someone", "555001", "someone")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Until they pay they must hold no access at all: disabled, unmanaged, no
+	// subscription — and therefore absent from every engine config.
+	if c.Enabled {
+		t.Fatal("a self-signed-up client must start disabled")
+	}
+	if c.ActiveUntil != "" || c.BillingManaged {
+		t.Fatalf("unexpected subscription state: until=%q managed=%v", c.ActiveUntil, c.BillingManaged)
+	}
+	if c.BillingExempt {
+		t.Fatal("a paying signup must not get lifetime free access")
+	}
+	if c.TelegramChatID != "555001" {
+		t.Fatalf("chat id = %q, want 555001", c.TelegramChatID)
+	}
+	if c.UUID == "" || c.Password == "" || c.SubscriptionToken == "" {
+		t.Fatalf("blank credential: %+v", c)
+	}
+
+	// Granted exactly the enabled inbounds.
+	ids, err := svc.GrantedInboundIDs(ctx, c.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[int64]bool{on1.ID: true, on2.ID: true}
+	if len(ids) != len(want) {
+		t.Fatalf("granted %v, want exactly the enabled inbounds %v", ids, want)
+	}
+	for _, id := range ids {
+		if !want[id] {
+			t.Fatalf("granted inbound %d, which is disabled", id)
+		}
+	}
+
+	// The bot finds them by chat id, so a second /start reuses this client.
+	found, err := st.GetClientByTelegramChatID(ctx, "555001")
+	if err != nil || found.ID != c.ID {
+		t.Fatalf("lookup by chat id = (%v, %v), want client %d", found, err, c.ID)
+	}
+
+	// Disabled clients are excluded from what sync pushes to a node.
+	grantees, err := st.ListInboundGrantedClients(ctx, on1.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, g := range grantees {
+		if g.ID == c.ID {
+			t.Fatal("an unpaid signup leaked into the node config")
+		}
+	}
+}

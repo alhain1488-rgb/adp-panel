@@ -111,3 +111,18 @@ func TestStarsForCoversTheNeed(t *testing.T) {
 		}
 	}
 }
+
+func TestSignupName(t *testing.T) {
+	tests := []struct {
+		chatID, username, want string
+	}{
+		{"555001", "someone", "tg:@someone"},
+		{"555002", "", "tg:555002"},
+		{"555003", "   ", "tg:555003"},
+	}
+	for _, tc := range tests {
+		if got := signupName(tc.chatID, tc.username); got != tc.want {
+			t.Errorf("signupName(%q, %q) = %q, want %q", tc.chatID, tc.username, got, tc.want)
+		}
+	}
+}
