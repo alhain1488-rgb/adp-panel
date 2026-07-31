@@ -125,9 +125,12 @@ func (t *Telegram) payingClient(ctx context.Context, chatID, username string) (*
 		return nil, false
 	}
 	t.logger.Info("billing: self-signup", "client", c.ID, "chat", chatID)
-	_ = t.SendMessageTo(ctx, chatID, withFooter(
+	// Send the persistent menu along with the greeting: without it a visitor who
+	// stops before paying has no way back into the flow except retyping /start.
+	_ = t.sendMessageMarkup(ctx, chatID, withFooter(
 		"👤 Аккаунт создан. Доступ включится сразу после оплаты подписки.\n"+
-			"(Account created — access switches on as soon as you buy a subscription.)"))
+			"(Account created — access switches on as soon as you buy a subscription.)"),
+		clientKeyboardJSON(true))
 	return c, true
 }
 

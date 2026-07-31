@@ -190,6 +190,13 @@ func (t *Telegram) handleTextMessage(ctx context.Context, u tgUpdate, deliver fu
 		// Bare /start: if the chat is already linked, just resend the config;
 		// otherwise explain how to link.
 		if c, err := t.store.GetClientByTelegramChatID(ctx, chatID); err == nil {
+			// A disabled client is in no engine config, so their "config" would be
+			// links that cannot connect — someone who signed up but never paid, or
+			// a lapsed subscription. Offer the plans instead of dead links.
+			if t.billingOn(ctx) && !c.Enabled {
+				t.sendTariffs(ctx, chatID, u.Message.From.Username)
+				return
+			}
 			if deliver != nil {
 				deliver(ctx, c)
 			}
