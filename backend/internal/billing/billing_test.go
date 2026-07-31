@@ -350,3 +350,69 @@ func TestRefundStars_GuardsSpentBalanceAndUnlinkedClients(t *testing.T) {
 		t.Fatalf("refunder called %d times for an unlinked client, want 0", fr.calls)
 	}
 }
+
+func TestReconcile_NeverSuspendsExemptClients(t *testing.T) {
+	svc, st, ctx := newSvc(t)
+	now := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
+	svc.now = func() time.Time { return now }
+	if err := svc.SetSettings(ctx, defaults(true)); err != nil {
+		t.Fatal(err)
+	}
+
+	// Two clients buy the same plan; one of them holds lifetime free access.
+	paying := seedClient(t, st, ctx, "paying")
+	lifetime := seedClient(t, st, ctx, "lifetime")
+	for _, c := range []*store.Client{paying, lifetime} {
+		if _, err := svc.ManualAdjust(ctx, c.ID, 100000, "seed"); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := svc.Purchase(ctx, c.ID, "week"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cb, err := svc.SetExempt(ctx, lifetime.ID, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cb.Exempt {
+		t.Fatal("exempt flag not reported back")
+	}
+
+	// Long past both expiries.
+	svc.now = func() time.Time { return now.Add(365 * 24 * time.Hour) }
+	svc.Reconcile(ctx)
+
+	if got, _ := st.GetClient(ctx, paying.ID); got.Enabled {
+		t.Fatal("a normal expired client should have been suspended")
+	}
+	if got, _ := st.GetClient(ctx, lifetime.ID); !got.Enabled {
+		t.Fatal("an exempt client must never be auto-suspended")
+	}
+
+	// Revoking the exemption puts them back under the engine's control.
+	if _, err := svc.SetExempt(ctx, lifetime.ID, false); err != nil {
+		t.Fatal(err)
+	}
+	svc.Reconcile(ctx)
+	if got, _ := st.GetClient(ctx, lifetime.ID); got.Enabled {
+		t.Fatal("after revoking the exemption the expired client should be suspended")
+	}
+}
+
+func TestSetExempt_DoesNotReenableDisabledClient(t *testing.T) {
+	svc, st, ctx := newSvc(t)
+	if err := svc.SetSettings(ctx, defaults(true)); err != nil {
+		t.Fatal(err)
+	}
+	c := seedClient(t, st, ctx, "off")
+	if _, err := st.SetClientEnabled(ctx, c.ID, false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.SetExempt(ctx, c.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	// Exemption is a promise about the future, not an override of a manual toggle.
+	if got, _ := st.GetClient(ctx, c.ID); got.Enabled {
+		t.Fatal("granting lifetime access must not re-enable a manually disabled client")
+	}
+}

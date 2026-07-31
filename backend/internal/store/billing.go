@@ -161,12 +161,14 @@ func extendUntil(now time.Time, curUntil string, days int) string {
 // SuspendExpiredManaged disables, in one atomic statement, every billing-managed
 // client whose subscription expired at or before now. Because the expiry is
 // re-checked in the WHERE clause at write time, it cannot clobber a concurrent
-// purchase that just extended a client (that row no longer matches). Returns the
-// number of clients suspended.
+// purchase that just extended a client (that row no longer matches). Clients
+// flagged billing_exempt are skipped outright — that flag is a standing promise
+// of free access and outranks any expiry. Returns the number of clients suspended.
 func (s *Store) SuspendExpiredManaged(ctx context.Context, now string) (int64, error) {
 	res, err := s.db.ExecContext(ctx, `
 		UPDATE clients SET enabled = 0, updated_at = ?
-		WHERE billing_managed = 1 AND enabled = 1 AND active_until != '' AND active_until <= ?`,
+		WHERE billing_managed = 1 AND billing_exempt = 0 AND enabled = 1
+		  AND active_until != '' AND active_until <= ?`,
 		nowRFC3339(), now)
 	if err != nil {
 		return 0, err

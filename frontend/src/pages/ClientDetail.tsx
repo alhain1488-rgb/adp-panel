@@ -32,6 +32,7 @@ import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Switch } from '@/components/ui/switch'
 import { Separator } from '@/components/ui/separator'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
@@ -48,6 +49,7 @@ import { useLang, useT } from '@/i18n/i18n'
 import {
   useBillingSettings,
   useClientBilling,
+  useClientExempt,
   useClientGrant,
   useClientRefund,
   useClientTopup,
@@ -598,6 +600,7 @@ function BillingTab({ client }: { client: Client }) {
   const topup = useClientTopup(client.id)
   const grant = useClientGrant(client.id)
   const refund = useClientRefund(client.id)
+  const exempt = useClientExempt(client.id)
   const [amount, setAmount] = useState('')
   const [note, setNote] = useState('')
   const [confirmRefund, setConfirmRefund] = useState<BillingTransaction | null>(null)
@@ -683,10 +686,36 @@ function BillingTab({ client }: { client: Client }) {
             <>
               <div className="flex flex-wrap items-center gap-3">
                 <div className="text-2xl font-semibold tabular-nums">{formatRubles(b?.balance_kopecks ?? 0)}</div>
-                <Badge variant={status.variant}>{status.text}</Badge>
-                {b?.managed && (
+                <Badge variant={b?.exempt ? 'success' : status.variant}>
+                  {b?.exempt ? t('clientDetail.billing.exemptBadge') : status.text}
+                </Badge>
+                {b?.managed && !b?.exempt && (
                   <span className="text-xs text-muted-foreground">{t('clientDetail.billing.managed')}</span>
                 )}
+              </div>
+
+              {/* Lifetime free access */}
+              <div className="flex items-start justify-between gap-4 rounded-lg border p-3">
+                <div className="space-y-1">
+                  <Label htmlFor="exempt" className="text-sm">
+                    {t('clientDetail.billing.exempt')}
+                  </Label>
+                  <p className="text-xs text-muted-foreground">{t('clientDetail.billing.exemptHint')}</p>
+                </div>
+                <Switch
+                  id="exempt"
+                  checked={b?.exempt ?? false}
+                  disabled={exempt.isPending || billing.isLoading}
+                  onCheckedChange={(v) =>
+                    exempt.mutate(
+                      { exempt: v },
+                      {
+                        onSuccess: () => toast({ title: t('clientDetail.billing.applied') }),
+                        onError: () => toast({ title: t('clientDetail.billing.failed'), variant: 'destructive' }),
+                      },
+                    )
+                  }
+                />
               </div>
 
               {/* Adjust balance */}

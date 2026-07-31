@@ -203,6 +203,7 @@ func Router(d Deps) http.Handler {
 					r.Post("/billing/topup", bilh.clientTopup)
 					r.Post("/billing/grant", bilh.clientGrant)
 					r.Post("/billing/refund", bilh.clientRefund)
+					r.Post("/billing/exempt", bilh.clientExempt)
 				}
 			})
 		})

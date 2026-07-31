@@ -33,6 +33,7 @@ export interface ClientBilling {
   active_until: string // RFC3339 or ""
   active: boolean
   managed: boolean
+  exempt: boolean // lifetime free access — never auto-suspended
   transactions: BillingTransaction[]
 }
 
@@ -96,6 +97,20 @@ export function useClientRefund(id: number) {
   return useMutation({
     mutationFn: (body: { tx_id: number }) =>
       api.post<ClientBilling>(`/api/clients/${id}/billing/refund`, body),
+    onSuccess: (data) => {
+      qc.setQueryData(clientBillingKey(id), data)
+      qc.invalidateQueries({ queryKey: qk.client(id) })
+    },
+  })
+}
+
+// useClientExempt grants or revokes lifetime free access. It never changes the
+// client's enabled state — that stays the operator's manual toggle.
+export function useClientExempt(id: number) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (body: { exempt: boolean }) =>
+      api.post<ClientBilling>(`/api/clients/${id}/billing/exempt`, body),
     onSuccess: (data) => {
       qc.setQueryData(clientBillingKey(id), data)
       qc.invalidateQueries({ queryKey: qk.client(id) })

@@ -90,12 +90,14 @@ type Transaction struct {
 
 // ClientBilling is a client's wallet + subscription snapshot.
 type ClientBilling struct {
-	ClientID       int64         `json:"client_id"`
-	BalanceKopecks int64         `json:"balance_kopecks"`
-	ActiveUntil    string        `json:"active_until"`
-	Active         bool          `json:"active"`
-	Managed        bool          `json:"managed"`
-	Transactions   []Transaction `json:"transactions"`
+	ClientID       int64  `json:"client_id"`
+	BalanceKopecks int64  `json:"balance_kopecks"`
+	ActiveUntil    string `json:"active_until"`
+	Active         bool   `json:"active"`
+	Managed        bool   `json:"managed"`
+	// Exempt marks lifetime free access — this client is never auto-suspended.
+	Exempt       bool          `json:"exempt"`
+	Transactions []Transaction `json:"transactions"`
 }
 
 // Resync re-pushes engine config to all nodes after a client's enabled state
@@ -282,8 +284,19 @@ func (s *Service) ClientBilling(ctx context.Context, clientID int64, txLimit int
 		ActiveUntil:    c.ActiveUntil,
 		Active:         s.isActive(c.ActiveUntil),
 		Managed:        c.BillingManaged,
+		Exempt:         c.BillingExempt,
 		Transactions:   txs,
 	}, nil
+}
+
+// SetExempt grants or revokes lifetime free access. It deliberately leaves the
+// client's enabled flag alone: exemption stops future auto-suspension but does
+// not silently re-enable someone the operator disabled by hand.
+func (s *Service) SetExempt(ctx context.Context, clientID int64, exempt bool) (ClientBilling, error) {
+	if _, err := s.store.SetClientBillingExempt(ctx, clientID, exempt); err != nil {
+		return ClientBilling{}, err
+	}
+	return s.ClientBilling(ctx, clientID, 20)
 }
 
 // isActive reports whether an RFC3339 expiry is in the future.

@@ -137,6 +137,35 @@ func (h *billingHandler) clientGrant(w http.ResponseWriter, r *http.Request) {
 	h.writeClientBilling(w, r, id)
 }
 
+// clientExempt grants or revokes lifetime free access — the client is then never
+// auto-suspended, whatever their subscription expiry says.
+func (h *billingHandler) clientExempt(w http.ResponseWriter, r *http.Request) {
+	id, ok := idParam(r)
+	if !ok {
+		writeError(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+	var in struct {
+		Exempt bool `json:"exempt"`
+	}
+	if err := decode(r, &in); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	cb, err := h.svc.SetExempt(r.Context(), id, in.Exempt)
+	if errors.Is(err, store.ErrNotFound) {
+		writeError(w, http.StatusNotFound, "client not found")
+		return
+	} else if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to update lifetime access")
+		return
+	}
+	adminID, _ := auth.AdminIDFrom(r.Context())
+	recordAudit(r.Context(), h.store, r, adminID, "billing.exempt", "client", id,
+		`{"exempt":`+strconv.FormatBool(in.Exempt)+`}`)
+	writeJSON(w, http.StatusOK, cb)
+}
+
 // clientRefund returns a Stars top-up to the payer via Telegram and debits the
 // credited amount from their wallet. Refunds are refused when the money has
 // already been spent — the balance never goes negative.

@@ -22,6 +22,7 @@ type Client struct {
 	WalletKopecks     int64  // prepaid balance in kopecks (100 = 1 RUB)
 	ActiveUntil       string // subscription expiry (RFC3339); "" = no billed subscription
 	BillingManaged    bool   // true once the client has bought a subscription
+	BillingExempt     bool   // lifetime free access: never auto-suspended
 	CreatedAt         string
 	UpdatedAt         string
 }
@@ -61,16 +62,16 @@ type InboundWithServer struct {
 
 const clientSelect = `
 	SELECT id, name, uuid, password, subscription_token, enabled, remark, created_at, updated_at, email,
-	       tg_chat_id, tg_username, tg_link_token, wallet_kopecks, active_until, billing_managed
+	       tg_chat_id, tg_username, tg_link_token, wallet_kopecks, active_until, billing_managed, billing_exempt
 	FROM clients`
 
 func scanClient(sc interface{ Scan(...any) error }) (*Client, error) {
 	var c Client
-	var enabled, managed int64
+	var enabled, managed, exempt int64
 	err := sc.Scan(&c.ID, &c.Name, &c.UUID, &c.Password, &c.SubscriptionToken,
 		&enabled, &c.Remark, &c.CreatedAt, &c.UpdatedAt, &c.Email,
 		&c.TelegramChatID, &c.TelegramUsername, &c.TelegramLinkToken,
-		&c.WalletKopecks, &c.ActiveUntil, &managed)
+		&c.WalletKopecks, &c.ActiveUntil, &managed, &exempt)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrNotFound
@@ -79,7 +80,22 @@ func scanClient(sc interface{ Scan(...any) error }) (*Client, error) {
 	}
 	c.Enabled = enabled != 0
 	c.BillingManaged = managed != 0
+	c.BillingExempt = exempt != 0
 	return &c, nil
+}
+
+// SetClientBillingExempt grants or revokes lifetime free access.
+func (s *Store) SetClientBillingExempt(ctx context.Context, id int64, exempt bool) (*Client, error) {
+	res, err := s.db.ExecContext(ctx,
+		"UPDATE clients SET billing_exempt = ?, updated_at = ? WHERE id = ?",
+		boolToInt(exempt), nowRFC3339(), id)
+	if err != nil {
+		return nil, err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return nil, ErrNotFound
+	}
+	return s.GetClient(ctx, id)
 }
 
 // ListClients returns all clients, oldest first.
@@ -336,7 +352,7 @@ func (s *Store) ListInboundGrantedClients(ctx context.Context, inboundID int64) 
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT c.id, c.name, c.uuid, c.password, c.subscription_token, c.enabled, c.remark,
 		       c.created_at, c.updated_at, c.email, c.tg_chat_id, c.tg_username, c.tg_link_token,
-		       c.wallet_kopecks, c.active_until, c.billing_managed
+		       c.wallet_kopecks, c.active_until, c.billing_managed, c.billing_exempt
 		FROM client_inbounds ci
 		JOIN clients c ON c.id = ci.client_id
 		WHERE ci.inbound_id = ? AND ci.enabled = 1 AND c.enabled = 1

@@ -152,6 +152,7 @@ interface MockBilling {
   balance_kopecks: number
   active_until: string
   managed: boolean
+  exempt: boolean
   transactions: MockBillingTx[]
 }
 const clientBilling: Record<number, MockBilling> = {}
@@ -164,6 +165,7 @@ function getBilling(id: number): MockBilling {
       balance_kopecks: 13000,
       active_until: '',
       managed: false,
+      exempt: false,
       transactions: [
         {
           id: billingTxSeq++,
@@ -191,6 +193,7 @@ function billingSnapshot(id: number) {
     active_until: mb.active_until,
     active,
     managed: mb.managed,
+    exempt: mb.exempt,
     // Mirrors the backend: only unrefunded Stars top-ups still covered by the
     // balance may be refunded.
     transactions: mb.transactions.map((tx) => ({
@@ -919,6 +922,14 @@ export const handlers = [
     pushTx(mb, { kind: 'grant', method: 'manual', amount_kopecks: 0, detail: input.tariff })
     c.enabled = true
     c.updated_at = new Date().toISOString()
+    return json(billingSnapshot(id))
+  }),
+  http.post('/api/clients/:id/billing/exempt', async ({ request, params }) => {
+    if (!requireAuth(request)) return unauthorized()
+    const id = Number(params.id)
+    if (!clients.find((x) => x.id === id)) return notFound()
+    const input = (await request.json()) as { exempt?: boolean }
+    getBilling(id).exempt = !!input.exempt
     return json(billingSnapshot(id))
   }),
   http.post('/api/clients/:id/billing/refund', async ({ request, params }) => {

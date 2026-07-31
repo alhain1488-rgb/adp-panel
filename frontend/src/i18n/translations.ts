@@ -197,6 +197,12 @@ export const dict: Record<string, { en: string; ru: string }> = {
   "clientDetail.billing.historyEmpty": { en: "No operations yet.", ru: "Операций пока нет." },
   "clientDetail.billing.applied": { en: "Applied", ru: "Применено" },
   "clientDetail.billing.failed": { en: "Operation failed", ru: "Операция не удалась" },
+  "clientDetail.billing.exempt": { en: "Lifetime free access", ru: "Пожизненный бесплатный доступ" },
+  "clientDetail.billing.exemptBadge": { en: "Lifetime free", ru: "Пожизненно бесплатно" },
+  "clientDetail.billing.exemptHint": {
+    en: "This client is never auto-suspended, whatever their subscription says. Does not switch a disabled client back on — use the toggle above for that.",
+    ru: "Клиента никогда не отключит автоприостановка, что бы ни было с его подпиской. Выключенного клиента это не включает — для этого тумблер выше.",
+  },
   "clientDetail.billing.refund": { en: "Refund", ru: "Вернуть" },
   "clientDetail.billing.refundedBadge": { en: "Refunded", ru: "Возвращено" },
   "clientDetail.billing.refunded": { en: "Stars refunded", ru: "Звёзды возвращены" },

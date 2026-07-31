@@ -682,6 +682,41 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
 
+  /api/clients/{id}/billing/exempt:
+    parameters:
+      - $ref: '#/components/parameters/IdPath'
+    post:
+      tags: [Billing]
+      summary: Grant or revoke lifetime free access
+      description: >
+        An exempt client is never auto-suspended by the billing reconciler,
+        whatever their subscription expiry says. Every client that existed when
+        migration 0008 ran is exempt. This never changes the client's enabled
+        flag — re-enabling a disabled client stays a manual action.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [exempt]
+              properties:
+                exempt:
+                  type: boolean
+      responses:
+        '200':
+          description: Client billing
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClientBilling'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
   /api/clients/{id}/billing/refund:
     parameters:
       - $ref: '#/components/parameters/IdPath'
@@ -1711,4 +1746,5 @@ components:
         active_until: { type: string, description: "RFC3339 expiry, or empty" }
         active: { type: boolean }
         managed: { type: boolean }
+        exempt: { type: boolean, description: "lifetime free access — never auto-suspended" }
         transactions: { type: array, items: { $ref: '#/components/schemas/BillingTransaction' } }
