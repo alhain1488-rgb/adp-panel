@@ -443,6 +443,27 @@ func (s *Service) Grant(ctx context.Context, clientID int64, days int, detail st
 	return s.ClientBilling(ctx, clientID, 20)
 }
 
+// GrantPaid records a subscription paid for outside the wallet — today Tribute
+// (card/SBP), where the product's price is fixed by the payment provider and no
+// ruble balance is involved. amountKopecks is what the payer was charged; it is
+// recorded for the operator's books but never credited to the wallet, so it
+// cannot be spent twice.
+//
+// Idempotent by chargeID: a repeated webhook returns store.ErrDuplicateCharge and
+// changes nothing.
+func (s *Service) GrantPaid(ctx context.Context, clientID int64, days int, method, chargeID, detail string, amountKopecks int64) error {
+	if days <= 0 {
+		return store.ErrNotFound
+	}
+	if err := s.store.GrantSubscription(ctx, clientID, s.now(), days, store.BillingTx{
+		Kind: "purchase", Method: method, AmountKopecks: 0, Detail: detail, ChargeID: chargeID,
+	}); err != nil {
+		return err
+	}
+	s.triggerResync()
+	return nil
+}
+
 func (s *Service) triggerResync() {
 	if s.resync != nil {
 		s.resync.AsyncAll()

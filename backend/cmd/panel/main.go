@@ -26,10 +26,11 @@ import (
 	"github.com/adp/panel/internal/store"
 	"github.com/adp/panel/internal/subscription"
 	syncpkg "github.com/adp/panel/internal/sync"
+	"github.com/adp/panel/internal/tribute"
 )
 
 // version is the backend build version; kept in sync with the frontend APP_VERSION.
-const version = "0.9.15.0"
+const version = "0.10.0.0"
 
 func main() {
 	logger := logging.New()
@@ -66,7 +67,9 @@ func main() {
 	telegramSvc := backup.NewTelegram(backupSvc, st, cipher, logger)
 	telegramSvc.SetBilling(billingSvc)
 	billingSvc.SetStarRefunder(telegramSvc)
+	tributeSvc := tribute.NewService(st, cipher, billingSvc, logger)
 	telegramSvc.SetSignup(clientsSvc)
+	telegramSvc.SetTribute(tributeSvc)
 	mailer := mail.NewMailer(st, cipher)
 	emailBackupSvc := backup.NewEmail(backupSvc, mailer, st, cipher, logger)
 
@@ -92,6 +95,7 @@ func main() {
 		Telegram:     telegramSvc,
 		EmailBackup:  emailBackupSvc,
 		Billing:      billingSvc,
+		Tribute:      tributeSvc,
 		Mail:         mailer,
 		Logger:       logger,
 		Version:      version,

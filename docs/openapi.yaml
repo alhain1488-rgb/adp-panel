@@ -682,6 +682,87 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
 
+  /api/tribute/webhook:
+    post:
+      tags: [Billing]
+      summary: Tribute payment webhook (public, signature-gated)
+      description: >
+        Unauthenticated by necessity — Tribute posts here. The gate is an
+        HMAC-SHA256 of the raw body under the Tribute API key, sent in the
+        trbt-signature header, so the body must be verified verbatim. Applying a
+        purchase is idempotent on Tribute's purchase_id, which matters because
+        Tribute retries for ~24h. Events we cannot act on (unmapped product,
+        unknown payer, other event types) answer 200 so they stop being retried.
+      security: []
+      parameters:
+        - name: trbt-signature
+          in: header
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string, example: new_digital_product }
+                created_at: { type: string, format: date-time }
+                payload:
+                  type: object
+                  properties:
+                    product_id: { type: integer, format: int64 }
+                    product_name: { type: string }
+                    amount: { type: integer, format: int64, description: "smallest currency unit" }
+                    currency: { type: string }
+                    purchase_id: { type: integer, format: int64 }
+                    telegram_user_id: { type: integer, format: int64 }
+      responses:
+        '200':
+          description: Applied, or acknowledged and ignored
+        '401':
+          description: Missing or invalid signature
+        '503':
+          description: Tribute payments are disabled
+
+  /api/billing/tribute:
+    get:
+      tags: [Billing]
+      summary: Tribute configuration (never returns the API key)
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Tribute settings
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TributeSettings' }
+    put:
+      tags: [Billing]
+      summary: Update Tribute configuration
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/TributeSettings'
+                - type: object
+                  properties:
+                    api_key:
+                      type: string
+                      description: Write-only; blank keeps the stored key.
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TributeSettings' }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
   /api/billing/stars:
     get:
       tags: [Billing]
@@ -1751,6 +1832,21 @@ components:
             Anyone who opens the bot may buy a subscription. A client is created
             for them on their first move to pay, granted every enabled inbound and
             left disabled until the purchase lands.
+
+    TributeSettings:
+      type: object
+      properties:
+        enabled: { type: boolean }
+        has_api_key: { type: boolean, description: "a key is stored; the key itself is never returned" }
+        products:
+          type: array
+          items:
+            type: object
+            properties:
+              product_id: { type: integer, format: int64 }
+              days: { type: integer, description: "subscription days this product grants" }
+              title: { type: string }
+              link: { type: string, description: "Tribute payment link shown in the bot" }
 
     StarLedger:
       type: object

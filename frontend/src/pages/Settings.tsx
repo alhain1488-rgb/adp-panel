@@ -16,6 +16,8 @@ import {
   Mail,
   Ban,
   Wallet,
+  CreditCard,
+  Trash2,
 } from 'lucide-react'
 import { PageHeader } from '@/components/common/page-header'
 import { Button } from '@/components/ui/button'
@@ -66,6 +68,11 @@ import {
   type BillingSettings,
 } from '@/api/billing'
 import { cn } from '@/lib/utils'
+import {
+  useTributeSettings,
+  useUpdateTributeSettings,
+  type TributeProduct,
+} from '@/api/tribute'
 import { useLang, useT } from '@/i18n/i18n'
 
 export default function SettingsPage() {
@@ -96,8 +103,9 @@ export default function SettingsPage() {
         <TabsContent value="blocklist" className="mt-6">
           <BlocklistCard />
         </TabsContent>
-        <TabsContent value="billing" className="mt-6">
+        <TabsContent value="billing" className="mt-6 space-y-6">
           <BillingCard />
+          <TributeCard />
         </TabsContent>
         <TabsContent value="backup" className="mt-6">
           <BackupTab />
@@ -170,6 +178,151 @@ function BlocklistCard() {
               <Button onClick={save} disabled={update.isPending || !dirty}>
                 {update.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
                 {t('settings.blocklist.save')}
+              </Button>
+            </div>
+          </>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
+// ---- Tribute (card/SBP) ----
+// Tribute products are bought outright: the price lives in Tribute, so the panel
+// only stores how many days each product grants. That mapping is the whole
+// configuration besides the API key, which doubles as the webhook signing key.
+function TributeCard() {
+  const t = useT()
+  const { toast } = useToast()
+  const { data, isLoading } = useTributeSettings()
+  const update = useUpdateTributeSettings()
+
+  const [enabled, setEnabled] = useState(false)
+  const [apiKey, setApiKey] = useState('')
+  const [products, setProducts] = useState<TributeProduct[]>([])
+
+  useEffect(() => {
+    if (data) {
+      setEnabled(data.enabled)
+      setProducts(data.products.length ? data.products : [])
+    }
+  }, [data])
+
+  function setRow(i: number, patch: Partial<TributeProduct>) {
+    setProducts((rows) => rows.map((r, idx) => (idx === i ? { ...r, ...patch } : r)))
+  }
+
+  function save() {
+    update.mutate(
+      { enabled, has_api_key: data?.has_api_key ?? false, products, api_key: apiKey.trim() || undefined },
+      {
+        onSuccess: () => {
+          setApiKey('')
+          toast({ title: t('settings.tribute.saved') })
+        },
+        onError: () => toast({ title: t('settings.tribute.failed'), variant: 'destructive' }),
+      },
+    )
+  }
+
+  return (
+    <Card className="max-w-2xl">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <CreditCard className="h-5 w-5" />
+          {t('settings.tribute.title')}
+        </CardTitle>
+        <CardDescription>{t('settings.tribute.desc')}</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-5">
+        {isLoading ? (
+          <Skeleton className="h-48" />
+        ) : (
+          <>
+            <div className="flex items-center justify-between gap-4 rounded-md border p-3">
+              <div>
+                <Label htmlFor="tribute-enabled">{t('settings.tribute.enable')}</Label>
+                <p className="mt-1 text-xs text-muted-foreground">{t('settings.tribute.enableHint')}</p>
+              </div>
+              <Switch id="tribute-enabled" checked={enabled} onCheckedChange={setEnabled} />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="tribute-key">{t('settings.tribute.apiKey')}</Label>
+              <Input
+                id="tribute-key"
+                type="password"
+                autoComplete="off"
+                placeholder={data?.has_api_key ? '••••••••' : ''}
+                value={apiKey}
+                onChange={(e) => setApiKey(e.target.value)}
+              />
+              <p className="text-xs text-muted-foreground">{t('settings.tribute.apiKeyHint')}</p>
+            </div>
+
+            <div className="space-y-2">
+              <Label>{t('settings.tribute.products')}</Label>
+              {products.length === 0 && (
+                <p className="text-xs text-muted-foreground">{t('settings.tribute.productsEmpty')}</p>
+              )}
+              {products.map((p, i) => (
+                <div key={i} className="grid grid-cols-[1fr_5rem_5rem_auto] items-end gap-2">
+                  <div className="space-y-1">
+                    <Label className="text-[11px] text-muted-foreground">{t('settings.tribute.colTitle')}</Label>
+                    <Input value={p.title ?? ''} onChange={(e) => setRow(i, { title: e.target.value })} />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-[11px] text-muted-foreground">ID</Label>
+                    <Input
+                      inputMode="numeric"
+                      value={p.product_id || ''}
+                      onChange={(e) => setRow(i, { product_id: Number(e.target.value) || 0 })}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-[11px] text-muted-foreground">{t('settings.tribute.colDays')}</Label>
+                    <Input
+                      inputMode="numeric"
+                      value={p.days || ''}
+                      onChange={(e) => setRow(i, { days: Number(e.target.value) || 0 })}
+                    />
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => setProducts((rows) => rows.filter((_, idx) => idx !== i))}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
+              ))}
+              {products.map((p, i) => (
+                <Input
+                  key={'link' + i}
+                  placeholder="https://t.me/tribute/app?startapp=…"
+                  value={p.link ?? ''}
+                  onChange={(e) => setRow(i, { link: e.target.value })}
+                  className="font-mono text-xs"
+                />
+              ))}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setProducts((rows) => [...rows, { product_id: 0, days: 30, title: '', link: '' }])}
+              >
+                {t('settings.tribute.addProduct')}
+              </Button>
+              <p className="text-xs text-muted-foreground">{t('settings.tribute.productsHint')}</p>
+            </div>
+
+            <div className="space-y-1 rounded-md border border-warning/40 bg-warning/5 p-3 text-xs text-muted-foreground">
+              <p>{t('settings.tribute.webhookHint')}</p>
+            </div>
+
+            <div className="flex justify-end">
+              <Button onClick={save} disabled={update.isPending}>
+                {update.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+                {t('settings.tribute.save')}
               </Button>
             </div>
           </>

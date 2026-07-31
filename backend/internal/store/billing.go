@@ -117,14 +117,30 @@ func (s *Store) PurchaseSubscription(ctx context.Context, clientID, priceKopecks
 }
 
 // GrantSubscription extends a client's subscription by days without charging the
-// wallet (operator comp), marking them billing-managed and enabled, and records
-// tx. The new expiry is computed from the current row inside the transaction.
+// wallet (operator comp, or a purchase settled outside the wallet), marking them
+// billing-managed and enabled, and records tx. The new expiry is computed from
+// the current row inside the transaction.
+//
+// When tx.ChargeID is set and a row with that charge id already exists, it
+// returns ErrDuplicateCharge and changes nothing — the same guard CreditWallet
+// uses, so an external payment webhook can be retried safely.
 func (s *Store) GrantSubscription(ctx context.Context, clientID int64, now time.Time, days int, tx BillingTx) error {
 	dbtx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = dbtx.Rollback() }()
+
+	if tx.ChargeID != "" {
+		var n int64
+		if err := dbtx.QueryRowContext(ctx,
+			"SELECT COUNT(*) FROM billing_transactions WHERE charge_id = ?", tx.ChargeID).Scan(&n); err != nil {
+			return err
+		}
+		if n > 0 {
+			return ErrDuplicateCharge
+		}
+	}
 
 	var curUntil string
 	err = dbtx.QueryRowContext(ctx, "SELECT active_until FROM clients WHERE id = ?", clientID).Scan(&curUntil)

@@ -137,6 +137,12 @@ const billingSettings = {
   support_contact: '@solepytt',
   self_signup_enabled: false,
 }
+// Mutable mock state for Tribute (card/SBP).
+const tributeSettings = {
+  enabled: false,
+  has_api_key: false,
+  products: [] as { product_id: number; days: number; title?: string; link?: string }[],
+}
 interface MockBillingTx {
   id: number
   kind: string
@@ -880,6 +886,18 @@ export const handlers = [
   }),
 
   // ---- Billing ----
+  http.get('/api/billing/tribute', ({ request }) => {
+    if (!requireAuth(request)) return unauthorized()
+    return json(tributeSettings)
+  }),
+  http.put('/api/billing/tribute', async ({ request }) => {
+    if (!requireAuth(request)) return unauthorized()
+    const input = (await request.json()) as Record<string, unknown>
+    tributeSettings.enabled = !!input.enabled
+    tributeSettings.products = (input.products as typeof tributeSettings.products) ?? []
+    if (typeof input.api_key === 'string' && input.api_key) tributeSettings.has_api_key = true
+    return json(tributeSettings)
+  }),
   http.get('/api/billing/stars', ({ request }) => {
     if (!requireAuth(request)) return unauthorized()
     return json({

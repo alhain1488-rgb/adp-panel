@@ -18,6 +18,7 @@ import (
 	"github.com/adp/panel/internal/brand"
 	"github.com/adp/panel/internal/crypto"
 	"github.com/adp/panel/internal/store"
+	"github.com/adp/panel/internal/tribute"
 )
 
 // Settings keys (KV). The bot token and passphrase are stored encrypted at rest
@@ -72,6 +73,7 @@ type Telegram struct {
 	now     func() time.Time
 	billing *billing.Service // optional; enables the in-bot payment/menu flow
 	signup  Signup           // optional; enables self-signup for strangers
+	tribute TributeLinks     // optional; enables card/SBP payment buttons
 
 	mu          sync.Mutex
 	botUsername string // cached getMe username; cleared when the token changes
@@ -91,6 +93,16 @@ func (t *Telegram) SetBilling(b *billing.Service) { t.billing = b }
 // SetSignup wires client registration in, so strangers can buy a subscription
 // without the operator creating them first. Gated by the self-signup setting.
 func (t *Telegram) SetSignup(s Signup) { t.signup = s }
+
+// TributeLinks supplies the card/SBP payment options to offer in the bot.
+// Satisfied by *tribute.Service.
+type TributeLinks interface {
+	PayOptions(ctx context.Context) ([]tribute.PayOption, error)
+}
+
+// SetTribute wires Tribute in, turning the card/SBP button from a stub into a
+// list of payment links. Safe to leave unset.
+func (t *Telegram) SetTribute(l TributeLinks) { t.tribute = l }
 
 // billingOn reports whether the in-bot payment flow should be offered.
 func (t *Telegram) billingOn(ctx context.Context) bool {

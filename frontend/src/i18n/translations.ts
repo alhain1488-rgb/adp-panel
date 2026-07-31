@@ -163,6 +163,37 @@ export const dict: Record<string, { en: string; ru: string }> = {
     en: "Anyone who opens the bot can buy a subscription — an account is created for them when they first move to pay, with access to every enabled inbound. Off: the bot only serves clients you created.",
     ru: "Любой, кто откроет бота, сможет купить подписку — аккаунт создастся при первом шаге к оплате, с доступом ко всем включённым инбаундам. Выключено: бот обслуживает только созданных вами клиентов.",
   },
+  "settings.tribute.title": { en: "Card / SBP via Tribute", ru: "Карта и СБП через Tribute" },
+  "settings.tribute.desc": {
+    en: "Tribute products are bought outright — the price lives in Tribute and the purchase grants a subscription directly, without touching the client's wallet.",
+    ru: "Товары Tribute покупаются напрямую: цена задана в Tribute, а покупка сразу выдаёт подписку, минуя кошелёк клиента.",
+  },
+  "settings.tribute.enable": { en: "Accept card / SBP payments", ru: "Принимать оплату картой и по СБП" },
+  "settings.tribute.enableHint": {
+    en: "Off: the bot offers Telegram Stars only. The webhook rejects everything while this is off.",
+    ru: "Выключено: бот предлагает только Telegram Stars, а вебхук отклоняет всё подряд.",
+  },
+  "settings.tribute.apiKey": { en: "Tribute API key", ru: "API-ключ Tribute" },
+  "settings.tribute.apiKeyHint": {
+    en: "Also the webhook signing key. Stored encrypted and never sent back to the browser; leave blank to keep the current one.",
+    ru: "Он же ключ подписи вебхука. Хранится зашифрованным и обратно в браузер не отдаётся; оставьте пустым, чтобы сохранить текущий.",
+  },
+  "settings.tribute.products": { en: "Products → subscription length", ru: "Товары → длительность подписки" },
+  "settings.tribute.productsEmpty": { en: "No products mapped yet.", ru: "Соответствия пока не заданы." },
+  "settings.tribute.productsHint": {
+    en: "Product ID and payment link come from Tribute; days is what the panel grants on purchase. A row missing an ID or days is dropped on save.",
+    ru: "ID товара и ссылку на оплату берите в Tribute; дни — то, что панель выдаст при покупке. Строка без ID или без дней при сохранении отбрасывается.",
+  },
+  "settings.tribute.colTitle": { en: "Title", ru: "Название" },
+  "settings.tribute.colDays": { en: "Days", ru: "Дней" },
+  "settings.tribute.addProduct": { en: "Add product", ru: "Добавить товар" },
+  "settings.tribute.webhookHint": {
+    en: "In Tribute → Settings → API keys, set the webhook URL to https://<your-panel>/api/tribute/webhook",
+    ru: "В Tribute → Настройки → API-ключи укажите URL вебхука: https://<ваша-панель>/api/tribute/webhook",
+  },
+  "settings.tribute.save": { en: "Save", ru: "Сохранить" },
+  "settings.tribute.saved": { en: "Tribute settings saved", ru: "Настройки Tribute сохранены" },
+  "settings.tribute.failed": { en: "Could not save Tribute settings", ru: "Не удалось сохранить настройки Tribute" },
   "settings.billing.stars": { en: "Bot Star balance", ru: "Баланс звёзд бота" },
   "settings.billing.starsHint": {
     en: "Paid Stars accrue to the bot and are held by Telegram — not by this panel. Newly earned Stars are locked for 21 days (the refund window). Withdrawal goes through Fragment to TON: at least 1000 ⭐ and KYC.",

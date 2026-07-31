@@ -22,6 +22,7 @@ import (
 	"github.com/adp/panel/internal/store"
 	"github.com/adp/panel/internal/subscription"
 	syncpkg "github.com/adp/panel/internal/sync"
+	"github.com/adp/panel/internal/tribute"
 )
 
 // Deps are the dependencies the HTTP layer needs.
@@ -38,6 +39,7 @@ type Deps struct {
 	Telegram     *backup.Telegram
 	EmailBackup  *backup.Email
 	Billing      *billing.Service
+	Tribute      *tribute.Service
 	Mail         *mail.Mailer
 	Logger       *slog.Logger
 	Version      string
@@ -103,6 +105,17 @@ func Router(d Deps) http.Handler {
 		})
 	}
 
+	// Public Tribute webhook. Unauthenticated by necessity — Tribute posts to it —
+	// but gated by an HMAC signature over the raw body and rate-limited per IP.
+	var trh *tributeHandler
+	if d.Tribute != nil {
+		trh = &tributeHandler{svc: d.Tribute, store: d.Store}
+		r.Group(func(r chi.Router) {
+			r.Use(httprate.LimitByIP(60, time.Minute))
+			r.Post("/api/tribute/webhook", trh.webhook)
+		})
+	}
+
 	// Protected API.
 	r.Group(func(r chi.Router) {
 		r.Use(d.Auth.RequireAuth)
@@ -128,6 +141,11 @@ func Router(d Deps) http.Handler {
 			r.Get("/api/billing/settings", bilh.getSettings)
 			r.Put("/api/billing/settings", bilh.putSettings)
 			r.Get("/api/billing/stars", bilh.stars)
+		}
+
+		if trh != nil {
+			r.Get("/api/billing/tribute", trh.getSettings)
+			r.Put("/api/billing/tribute", trh.putSettings)
 		}
 
 		if d.Backup != nil {

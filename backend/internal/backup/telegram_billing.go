@@ -14,6 +14,7 @@ import (
 
 	"github.com/adp/panel/internal/billing"
 	"github.com/adp/panel/internal/store"
+	"github.com/adp/panel/internal/tribute"
 )
 
 // Reply-keyboard button labels for the billing menu. A tap arrives as a message
@@ -310,11 +311,35 @@ func (t *Telegram) sendTariffs(ctx context.Context, chatID, username string) {
 			CallbackData: "buy:" + tf.Key,
 		}})
 	}
+	// Tribute plans are paid by card/SBP and grant a subscription outright, so
+	// they sit alongside the wallet tariffs rather than under "top up".
+	card := t.cardOptions(ctx)
+	for _, opt := range card {
+		rows = append(rows, []inlineButton{{Text: "💳 " + opt.Title, URL: opt.Link}})
+	}
+	tail := "Выберите тариф — сумма спишется с баланса. (Choose a plan — it is charged to your balance.)"
+	if len(card) > 0 {
+		tail += "\nКнопки с 💳 — оплата картой, баланс для них не нужен. " +
+			"(The 💳 buttons are paid by card and need no balance.)"
+	}
 	_ = t.sendMessageMarkup(ctx, chatID, withFooter(
 		"<b>🛒 Купить подписку (Buy subscription)</b>\n\n"+
-			"Ваш баланс (Your balance): <b>"+formatRubles(cb.BalanceKopecks)+"</b>\n"+
-			"Выберите тариф — сумма спишется с баланса. (Choose a plan — it is charged to your balance.)"),
+			"Ваш баланс (Your balance): <b>"+formatRubles(cb.BalanceKopecks)+"</b>\n"+tail),
 		inlineKeyboardJSON(rows))
+}
+
+// cardOptions returns the Tribute plans to show, or nothing when Tribute is
+// unwired or switched off — the bot then simply offers wallet tariffs only.
+func (t *Telegram) cardOptions(ctx context.Context) []tribute.PayOption {
+	if t.tribute == nil {
+		return nil
+	}
+	opts, err := t.tribute.PayOptions(ctx)
+	if err != nil {
+		t.logger.Warn("tribute: could not load pay options", "err", err)
+		return nil
+	}
+	return opts
 }
 
 // sendHistory lists the client's recent wallet operations.

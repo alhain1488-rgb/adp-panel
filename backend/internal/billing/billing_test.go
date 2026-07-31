@@ -416,3 +416,49 @@ func TestSetExempt_DoesNotReenableDisabledClient(t *testing.T) {
 		t.Fatal("granting lifetime access must not re-enable a manually disabled client")
 	}
 }
+
+func TestGrantPaid_IdempotentByChargeID(t *testing.T) {
+	svc, st, ctx := newSvc(t)
+	if err := svc.SetSettings(ctx, defaults(true)); err != nil {
+		t.Fatal(err)
+	}
+	c := seedClient(t, st, ctx, "tribute")
+
+	// A card purchase settled outside the wallet: subscription granted, balance
+	// untouched — the money never was ours to spend twice.
+	if err := svc.GrantPaid(ctx, c.ID, 30, "tribute", "tribute:777", "КВН на 1 мес.", 10000); err != nil {
+		t.Fatal(err)
+	}
+	cb, err := svc.ClientBilling(ctx, c.ID, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cb.Active || !cb.Managed {
+		t.Fatalf("expected an active managed subscription, got %+v", cb)
+	}
+	if cb.BalanceKopecks != 0 {
+		t.Fatalf("wallet = %d, want 0 — an external payment must not credit the wallet", cb.BalanceKopecks)
+	}
+
+	// The same webhook delivered again changes nothing.
+	err = svc.GrantPaid(ctx, c.ID, 30, "tribute", "tribute:777", "КВН на 1 мес.", 10000)
+	if !errors.Is(err, store.ErrDuplicateCharge) {
+		t.Fatalf("replay: err = %v, want ErrDuplicateCharge", err)
+	}
+	after, _ := svc.ClientBilling(ctx, c.ID, 10)
+	if after.ActiveUntil != cb.ActiveUntil {
+		t.Fatalf("replay extended the subscription: %s -> %s", cb.ActiveUntil, after.ActiveUntil)
+	}
+	if len(after.Transactions) != len(cb.Transactions) {
+		t.Fatalf("replay appended a ledger row: %d -> %d", len(cb.Transactions), len(after.Transactions))
+	}
+
+	// A different purchase does extend it.
+	if err := svc.GrantPaid(ctx, c.ID, 30, "tribute", "tribute:778", "КВН на 1 мес.", 10000); err != nil {
+		t.Fatal(err)
+	}
+	third, _ := svc.ClientBilling(ctx, c.ID, 10)
+	if third.ActiveUntil == cb.ActiveUntil {
+		t.Fatal("a second purchase should have extended the subscription")
+	}
+}
