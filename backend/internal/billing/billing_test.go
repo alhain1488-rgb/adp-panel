@@ -199,3 +199,154 @@ func TestGrantExtendsWithoutCharging(t *testing.T) {
 		t.Fatalf("grant should activate + manage: %+v", cb)
 	}
 }
+
+// fakeRefunder records Stars refund calls and can fail on demand.
+type fakeRefunder struct {
+	calls            int
+	userID, chargeID string
+	err              error
+}
+
+func (f *fakeRefunder) RefundStarPayment(_ context.Context, userID, chargeID string) error {
+	f.calls++
+	f.userID, f.chargeID = userID, chargeID
+	return f.err
+}
+
+// seedLinkedClient creates a client with a bound Telegram chat.
+func seedLinkedClient(t *testing.T, st *store.Store, ctx context.Context, name, chatID string) *store.Client {
+	t.Helper()
+	if _, err := st.CreateClient(ctx, store.ClientParams{
+		Name: name, UUID: "u-" + name, Password: "p", SubscriptionToken: "tok-" + name,
+		Enabled: true, TelegramLinkToken: "lnk-" + name,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	linked, err := st.LinkClientTelegram(ctx, "lnk-"+name, chatID, name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return linked
+}
+
+// topupID credits a Stars payment and returns its ledger id.
+func topupID(t *testing.T, svc *Service, st *store.Store, ctx context.Context, clientID, stars int64, charge string) int64 {
+	t.Helper()
+	if _, _, err := svc.CreditStars(ctx, clientID, stars, charge); err != nil {
+		t.Fatal(err)
+	}
+	txs, err := st.ListBillingTx(ctx, clientID, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return txs[0].ID
+}
+
+func TestRefundStars(t *testing.T) {
+	svc, st, ctx := newSvc(t)
+	if err := svc.SetSettings(ctx, defaults(true)); err != nil {
+		t.Fatal(err)
+	}
+	c := seedLinkedClient(t, st, ctx, "ref", "424242")
+	id := topupID(t, svc, st, ctx, c.ID, 100, "chg-a") // 100 ⭐ → 130 ₽
+
+	// Without a transport wired in, nothing may happen to the ledger.
+	if _, err := svc.RefundStars(ctx, c.ID, id); !errors.Is(err, ErrNoRefunder) {
+		t.Fatalf("err = %v, want ErrNoRefunder", err)
+	}
+	after, _ := st.GetClient(ctx, c.ID)
+	if after.WalletKopecks != 13000 {
+		t.Fatalf("wallet = %d, want 13000 (untouched)", after.WalletKopecks)
+	}
+
+	fr := &fakeRefunder{}
+	svc.SetStarRefunder(fr)
+	cb, err := svc.RefundStars(ctx, c.ID, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fr.calls != 1 || fr.userID != "424242" || fr.chargeID != "chg-a" {
+		t.Fatalf("refunder got (%d calls, user %q, charge %q), want (1, \"424242\", \"chg-a\")",
+			fr.calls, fr.userID, fr.chargeID)
+	}
+	if cb.BalanceKopecks != 0 {
+		t.Fatalf("balance = %d, want 0", cb.BalanceKopecks)
+	}
+
+	// The refunded top-up is reported as such and is no longer refundable.
+	var seen bool
+	for _, tx := range cb.Transactions {
+		if tx.ID == id {
+			seen = true
+			if !tx.Refunded || tx.Refundable {
+				t.Fatalf("top-up flags = (refunded %v, refundable %v), want (true, false)", tx.Refunded, tx.Refundable)
+			}
+		}
+	}
+	if !seen {
+		t.Fatal("refunded top-up missing from the ledger snapshot")
+	}
+
+	// Second attempt is refused before Telegram is called again.
+	if _, err := svc.RefundStars(ctx, c.ID, id); !errors.Is(err, store.ErrAlreadyRefunded) {
+		t.Fatalf("err = %v, want ErrAlreadyRefunded", err)
+	}
+	if fr.calls != 1 {
+		t.Fatalf("refunder called %d times, want 1", fr.calls)
+	}
+}
+
+func TestRefundStars_TelegramFailureLeavesLedgerAlone(t *testing.T) {
+	svc, st, ctx := newSvc(t)
+	if err := svc.SetSettings(ctx, defaults(true)); err != nil {
+		t.Fatal(err)
+	}
+	c := seedLinkedClient(t, st, ctx, "tgfail", "777")
+	id := topupID(t, svc, st, ctx, c.ID, 50, "chg-b")
+
+	fr := &fakeRefunder{err: errors.New("telegram: CHARGE_ALREADY_REFUNDED")}
+	svc.SetStarRefunder(fr)
+	if _, err := svc.RefundStars(ctx, c.ID, id); err == nil {
+		t.Fatal("expected the Telegram failure to surface")
+	}
+	after, _ := st.GetClient(ctx, c.ID)
+	if after.WalletKopecks != 6500 {
+		t.Fatalf("wallet = %d, want 6500 (untouched after a failed refund)", after.WalletKopecks)
+	}
+	tx, _ := st.GetBillingTx(ctx, id)
+	if tx.RefundedAt != "" {
+		t.Fatal("top-up stamped refunded even though Telegram refused")
+	}
+}
+
+func TestRefundStars_GuardsSpentBalanceAndUnlinkedClients(t *testing.T) {
+	svc, st, ctx := newSvc(t)
+	if err := svc.SetSettings(ctx, defaults(true)); err != nil {
+		t.Fatal(err)
+	}
+	fr := &fakeRefunder{}
+	svc.SetStarRefunder(fr)
+
+	// Spent balance → refused, and Telegram is never touched.
+	c := seedLinkedClient(t, st, ctx, "spent", "111")
+	id := topupID(t, svc, st, ctx, c.ID, 100, "chg-c")         // 130 ₽
+	if _, err := svc.Purchase(ctx, c.ID, "week"); err != nil { // −70 ₽
+		t.Fatal(err)
+	}
+	if _, err := svc.RefundStars(ctx, c.ID, id); !errors.Is(err, store.ErrInsufficientFunds) {
+		t.Fatalf("err = %v, want ErrInsufficientFunds", err)
+	}
+	if fr.calls != 0 {
+		t.Fatalf("refunder called %d times on a refusable refund, want 0", fr.calls)
+	}
+
+	// A client who never linked Telegram has no payer to refund.
+	u := seedClient(t, st, ctx, "unlinked")
+	uid := topupID(t, svc, st, ctx, u.ID, 100, "chg-d")
+	if _, err := svc.RefundStars(ctx, u.ID, uid); !errors.Is(err, ErrNotLinked) {
+		t.Fatalf("err = %v, want ErrNotLinked", err)
+	}
+	if fr.calls != 0 {
+		t.Fatalf("refunder called %d times for an unlinked client, want 0", fr.calls)
+	}
+}

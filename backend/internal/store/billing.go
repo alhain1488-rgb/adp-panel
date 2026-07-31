@@ -14,6 +14,11 @@ var (
 	// ErrDuplicateCharge is returned when a Stars payment (by charge id) has
 	// already been credited — the crediting is idempotent, so this is not fatal.
 	ErrDuplicateCharge = errors.New("store: duplicate charge id")
+	// ErrNotRefundable is returned when a ledger row is not a refundable Stars
+	// top-up (wrong kind/method, or no Telegram charge id to refund against).
+	ErrNotRefundable = errors.New("store: transaction is not refundable")
+	// ErrAlreadyRefunded is returned when a top-up has already been refunded.
+	ErrAlreadyRefunded = errors.New("store: transaction already refunded")
 )
 
 // BillingTx is one row of the append-only wallet ledger.
@@ -28,6 +33,7 @@ type BillingTx struct {
 	Detail        string
 	ChargeID      string // telegram_payment_charge_id, for Stars top-ups
 	CreatedAt     string
+	RefundedAt    string // RFC3339 once this top-up has been refunded, else ""
 }
 
 // CreditWallet adds deltaKopecks (positive to credit, negative to debit) to a
@@ -185,7 +191,7 @@ func (s *Store) ListBillingTx(ctx context.Context, clientID int64, limit int) ([
 		limit = 50
 	}
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, client_id, kind, method, amount_kopecks, stars, tariff, detail, charge_id, created_at
+		SELECT id, client_id, kind, method, amount_kopecks, stars, tariff, detail, charge_id, created_at, refunded_at
 		FROM billing_transactions WHERE client_id = ? ORDER BY id DESC LIMIT ?`, clientID, limit)
 	if err != nil {
 		return nil, err
@@ -195,12 +201,101 @@ func (s *Store) ListBillingTx(ctx context.Context, clientID int64, limit int) ([
 	for rows.Next() {
 		var t BillingTx
 		if err := rows.Scan(&t.ID, &t.ClientID, &t.Kind, &t.Method, &t.AmountKopecks,
-			&t.Stars, &t.Tariff, &t.Detail, &t.ChargeID, &t.CreatedAt); err != nil {
+			&t.Stars, &t.Tariff, &t.Detail, &t.ChargeID, &t.CreatedAt, &t.RefundedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, t)
 	}
 	return out, rows.Err()
+}
+
+// GetBillingTx returns one ledger row by id. Used before a refund, to read the
+// Telegram charge id the refund has to be issued against.
+func (s *Store) GetBillingTx(ctx context.Context, txID int64) (BillingTx, error) {
+	var t BillingTx
+	err := s.db.QueryRowContext(ctx, `
+		SELECT id, client_id, kind, method, amount_kopecks, stars, tariff, detail, charge_id, created_at, refunded_at
+		FROM billing_transactions WHERE id = ?`, txID).
+		Scan(&t.ID, &t.ClientID, &t.Kind, &t.Method, &t.AmountKopecks,
+			&t.Stars, &t.Tariff, &t.Detail, &t.ChargeID, &t.CreatedAt, &t.RefundedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return BillingTx{}, ErrNotFound
+	}
+	if err != nil {
+		return BillingTx{}, err
+	}
+	return t, nil
+}
+
+// RefundStarTopup debits a refunded Stars top-up from the client's wallet and
+// stamps refunded_at on the original row, atomically. Everything is re-validated
+// inside the transaction, so a concurrent second refund of the same payment ends
+// in ErrAlreadyRefunded rather than a double debit.
+//
+// A top-up whose money has already been spent is refused with
+// ErrInsufficientFunds and left untouched: the balance never goes negative, and
+// settling such a case is left to the operator.
+func (s *Store) RefundStarTopup(ctx context.Context, clientID, txID int64, detail string) (refundedKopecks, newBalance int64, err error) {
+	dbtx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, 0, err
+	}
+	defer func() { _ = dbtx.Rollback() }()
+
+	var (
+		owner                  int64
+		kind, method, charge   string
+		refundedAt             string
+		amount, stars, balance int64
+	)
+	err = dbtx.QueryRowContext(ctx, `
+		SELECT client_id, kind, method, amount_kopecks, stars, charge_id, refunded_at
+		FROM billing_transactions WHERE id = ?`, txID).
+		Scan(&owner, &kind, &method, &amount, &stars, &charge, &refundedAt)
+	if errors.Is(err, sql.ErrNoRows) || (err == nil && owner != clientID) {
+		return 0, 0, ErrNotFound
+	}
+	if err != nil {
+		return 0, 0, err
+	}
+	if kind != "topup" || method != "stars" || charge == "" || amount <= 0 {
+		return 0, 0, ErrNotRefundable
+	}
+	if refundedAt != "" {
+		return 0, 0, ErrAlreadyRefunded
+	}
+
+	if err := dbtx.QueryRowContext(ctx,
+		"SELECT wallet_kopecks FROM clients WHERE id = ?", clientID).Scan(&balance); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return 0, 0, ErrNotFound
+		}
+		return 0, 0, err
+	}
+	if balance < amount {
+		return amount, balance, ErrInsufficientFunds
+	}
+
+	if _, err := dbtx.ExecContext(ctx,
+		"UPDATE clients SET wallet_kopecks = wallet_kopecks - ?, updated_at = ? WHERE id = ?",
+		amount, nowRFC3339(), clientID); err != nil {
+		return 0, 0, err
+	}
+	res, err := dbtx.ExecContext(ctx,
+		"UPDATE billing_transactions SET refunded_at = ? WHERE id = ? AND refunded_at = ''",
+		nowRFC3339(), txID)
+	if err != nil {
+		return 0, 0, err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return 0, 0, ErrAlreadyRefunded
+	}
+	if err := insertBillingTx(ctx, dbtx, clientID, BillingTx{
+		Kind: "refund", Method: "stars", AmountKopecks: -amount, Stars: stars, Detail: detail,
+	}); err != nil {
+		return 0, 0, err
+	}
+	return amount, balance - amount, dbtx.Commit()
 }
 
 // ListManagedClients returns every client the billing engine manages (has bought

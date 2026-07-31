@@ -65,6 +65,7 @@ func main() {
 	billingSvc := billing.NewService(st, syncSvc, logger)
 	telegramSvc := backup.NewTelegram(backupSvc, st, cipher, logger)
 	telegramSvc.SetBilling(billingSvc)
+	billingSvc.SetStarRefunder(telegramSvc)
 	mailer := mail.NewMailer(st, cipher)
 	emailBackupSvc := backup.NewEmail(backupSvc, mailer, st, cipher, logger)
 

@@ -22,6 +22,8 @@ export interface BillingTransaction {
   tariff?: string
   detail?: string
   created_at: string
+  refunded?: boolean // this Stars top-up has been returned to the payer
+  refundable?: boolean // operator may refund it right now (balance still covers it)
 }
 
 // A client's wallet + subscription snapshot.
@@ -80,6 +82,20 @@ export function useClientTopup(id: number) {
   return useMutation({
     mutationFn: (body: { kopecks: number; detail?: string }) =>
       api.post<ClientBilling>(`/api/clients/${id}/billing/topup`, body),
+    onSuccess: (data) => {
+      qc.setQueryData(clientBillingKey(id), data)
+      qc.invalidateQueries({ queryKey: qk.client(id) })
+    },
+  })
+}
+
+// useClientRefund returns a Stars top-up to the payer via Telegram and debits the
+// credited amount from the wallet. Refused by the backend once the money is spent.
+export function useClientRefund(id: number) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (body: { tx_id: number }) =>
+      api.post<ClientBilling>(`/api/clients/${id}/billing/refund`, body),
     onSuccess: (data) => {
       qc.setQueryData(clientBillingKey(id), data)
       qc.invalidateQueries({ queryKey: qk.client(id) })

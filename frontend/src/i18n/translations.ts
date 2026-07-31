@@ -197,6 +197,18 @@ export const dict: Record<string, { en: string; ru: string }> = {
   "clientDetail.billing.historyEmpty": { en: "No operations yet.", ru: "Операций пока нет." },
   "clientDetail.billing.applied": { en: "Applied", ru: "Применено" },
   "clientDetail.billing.failed": { en: "Operation failed", ru: "Операция не удалась" },
+  "clientDetail.billing.refund": { en: "Refund", ru: "Вернуть" },
+  "clientDetail.billing.refundedBadge": { en: "Refunded", ru: "Возвращено" },
+  "clientDetail.billing.refunded": { en: "Stars refunded", ru: "Звёзды возвращены" },
+  "clientDetail.billing.refundFailed": {
+    en: "Refund failed — the balance may no longer cover this top-up",
+    ru: "Возврат не прошёл — возможно, баланса уже не хватает на эту сумму",
+  },
+  "clientDetail.billing.refundDialog.title": { en: "Refund this payment?", ru: "Вернуть платёж?" },
+  "clientDetail.billing.refundDialog.desc": {
+    en: "{stars} ⭐ go back to the client in Telegram and {amount} is debited from their balance. This cannot be undone.",
+    ru: "{stars} ⭐ вернутся клиенту в Telegram, а {amount} спишется с его баланса. Отменить это нельзя.",
+  },
   "clientDetail.billing.disabledHint": {
     en: "Payments are off — enable them in Settings → Payments.",
     ru: "Оплата выключена — включите в Настройки → Оплата.",

@@ -145,6 +145,8 @@ interface MockBillingTx {
   tariff?: string
   detail?: string
   created_at: string
+  charge_id?: string // set on Stars top-ups — only those can be refunded
+  refunded_at?: string
 }
 interface MockBilling {
   balance_kopecks: number
@@ -155,7 +157,26 @@ interface MockBilling {
 const clientBilling: Record<number, MockBilling> = {}
 let billingTxSeq = 1
 function getBilling(id: number): MockBilling {
-  if (!clientBilling[id]) clientBilling[id] = { balance_kopecks: 0, active_until: '', managed: false, transactions: [] }
+  if (!clientBilling[id]) {
+    // Seed one Stars top-up so the refund flow is reviewable on mocks, exactly as
+    // a real client's first payment would look.
+    clientBilling[id] = {
+      balance_kopecks: 13000,
+      active_until: '',
+      managed: false,
+      transactions: [
+        {
+          id: billingTxSeq++,
+          kind: 'topup',
+          method: 'stars',
+          amount_kopecks: 13000,
+          stars: 100,
+          charge_id: `mock_charge_${id}`,
+          created_at: new Date(Date.now() - 3600_000).toISOString(),
+        },
+      ],
+    }
+  }
   return clientBilling[id]
 }
 function pushTx(mb: MockBilling, tx: Omit<MockBillingTx, 'id' | 'created_at'>) {
@@ -170,7 +191,19 @@ function billingSnapshot(id: number) {
     active_until: mb.active_until,
     active,
     managed: mb.managed,
-    transactions: mb.transactions,
+    // Mirrors the backend: only unrefunded Stars top-ups still covered by the
+    // balance may be refunded.
+    transactions: mb.transactions.map((tx) => ({
+      ...tx,
+      refunded: !!tx.refunded_at,
+      refundable:
+        !tx.refunded_at &&
+        tx.kind === 'topup' &&
+        tx.method === 'stars' &&
+        !!tx.charge_id &&
+        tx.amount_kopecks > 0 &&
+        mb.balance_kopecks >= tx.amount_kopecks,
+    })),
   }
 }
 function tariffDays(key: string): number {
@@ -886,6 +919,32 @@ export const handlers = [
     pushTx(mb, { kind: 'grant', method: 'manual', amount_kopecks: 0, detail: input.tariff })
     c.enabled = true
     c.updated_at = new Date().toISOString()
+    return json(billingSnapshot(id))
+  }),
+  http.post('/api/clients/:id/billing/refund', async ({ request, params }) => {
+    if (!requireAuth(request)) return unauthorized()
+    const id = Number(params.id)
+    if (!clients.find((x) => x.id === id)) return notFound()
+    const input = (await request.json()) as { tx_id?: number }
+    const mb = getBilling(id)
+    const tx = mb.transactions.find((x) => x.id === input.tx_id)
+    if (!tx) return notFound()
+    if (tx.kind !== 'topup' || tx.method !== 'stars' || !tx.charge_id) {
+      return json({ error: 'only Telegram Stars top-ups can be refunded' }, { status: 409 })
+    }
+    if (tx.refunded_at) return json({ error: 'already refunded' }, { status: 409 })
+    if (mb.balance_kopecks < tx.amount_kopecks) {
+      return json({ error: 'balance no longer covers this top-up' }, { status: 409 })
+    }
+    tx.refunded_at = new Date().toISOString()
+    mb.balance_kopecks -= tx.amount_kopecks
+    pushTx(mb, {
+      kind: 'refund',
+      method: 'stars',
+      amount_kopecks: -tx.amount_kopecks,
+      stars: tx.stars,
+      detail: `refund of top-up #${tx.id}`,
+    })
     return json(billingSnapshot(id))
   }),
 

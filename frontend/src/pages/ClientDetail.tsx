@@ -18,6 +18,7 @@ import {
   Plus,
   Minus,
   Gift,
+  Undo2,
 } from 'lucide-react'
 import { PageHeader } from '@/components/common/page-header'
 import { EmptyState } from '@/components/common/misc'
@@ -48,6 +49,7 @@ import {
   useBillingSettings,
   useClientBilling,
   useClientGrant,
+  useClientRefund,
   useClientTopup,
   formatRubles,
   type BillingTransaction,
@@ -595,8 +597,10 @@ function BillingTab({ client }: { client: Client }) {
   const settings = useBillingSettings().data
   const topup = useClientTopup(client.id)
   const grant = useClientGrant(client.id)
+  const refund = useClientRefund(client.id)
   const [amount, setAmount] = useState('')
   const [note, setNote] = useState('')
+  const [confirmRefund, setConfirmRefund] = useState<BillingTransaction | null>(null)
 
   const fmtDate = (iso: string) =>
     iso
@@ -630,6 +634,21 @@ function BillingTab({ client }: { client: Client }) {
       {
         onSuccess: () => toast({ title: t('clientDetail.billing.applied') }),
         onError: () => toast({ title: t('clientDetail.billing.failed'), variant: 'destructive' }),
+      },
+    )
+  }
+
+  function applyRefund() {
+    const tx = confirmRefund
+    if (!tx) return
+    refund.mutate(
+      { tx_id: tx.id },
+      {
+        onSuccess: () => {
+          toast({ title: t('clientDetail.billing.refunded') })
+          setConfirmRefund(null)
+        },
+        onError: () => toast({ title: t('clientDetail.billing.refundFailed'), variant: 'destructive' }),
       },
     )
   }
@@ -739,18 +758,38 @@ function BillingTab({ client }: { client: Client }) {
               {b.transactions.map((tx) => (
                 <li key={tx.id} className="flex items-center justify-between gap-3 py-2">
                   <div className="min-w-0">
-                    <div className="truncate">{txLabel(tx, t)}</div>
+                    <div className="truncate">
+                      {txLabel(tx, t)}
+                      {tx.refunded && (
+                        <Badge variant="secondary" className="ml-2 align-middle">
+                          {t('clientDetail.billing.refundedBadge')}
+                        </Badge>
+                      )}
+                    </div>
                     <div className="text-xs text-muted-foreground">{fmtDate(tx.created_at)}</div>
                   </div>
-                  <span
-                    className={cn(
-                      'shrink-0 tabular-nums',
-                      tx.amount_kopecks > 0 ? 'text-success' : tx.amount_kopecks < 0 ? 'text-destructive' : 'text-muted-foreground',
+                  <div className="flex shrink-0 items-center gap-2">
+                    {tx.refundable && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setConfirmRefund(tx)}
+                        disabled={refund.isPending}
+                      >
+                        <Undo2 className="h-4 w-4" />
+                        {t('clientDetail.billing.refund')}
+                      </Button>
                     )}
-                  >
-                    {tx.amount_kopecks > 0 ? '+' : ''}
-                    {formatRubles(tx.amount_kopecks)}
-                  </span>
+                    <span
+                      className={cn(
+                        'tabular-nums',
+                        tx.amount_kopecks > 0 ? 'text-success' : tx.amount_kopecks < 0 ? 'text-destructive' : 'text-muted-foreground',
+                      )}
+                    >
+                      {tx.amount_kopecks > 0 ? '+' : ''}
+                      {formatRubles(tx.amount_kopecks)}
+                    </span>
+                  </div>
                 </li>
               ))}
             </ul>
@@ -759,6 +798,29 @@ function BillingTab({ client }: { client: Client }) {
           )}
         </CardContent>
       </Card>
+
+      <Dialog open={confirmRefund !== null} onOpenChange={(open) => !open && setConfirmRefund(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{t('clientDetail.billing.refundDialog.title')}</DialogTitle>
+            <DialogDescription>
+              {t('clientDetail.billing.refundDialog.desc', {
+                amount: formatRubles(confirmRefund?.amount_kopecks ?? 0),
+                stars: confirmRefund?.stars ?? 0,
+              })}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setConfirmRefund(null)} disabled={refund.isPending}>
+              {t('common.cancel')}
+            </Button>
+            <Button variant="destructive" onClick={applyRefund} disabled={refund.isPending}>
+              {refund.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+              {t('clientDetail.billing.refund')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

@@ -137,6 +137,56 @@ func (h *billingHandler) clientGrant(w http.ResponseWriter, r *http.Request) {
 	h.writeClientBilling(w, r, id)
 }
 
+// clientRefund returns a Stars top-up to the payer via Telegram and debits the
+// credited amount from their wallet. Refunds are refused when the money has
+// already been spent — the balance never goes negative.
+func (h *billingHandler) clientRefund(w http.ResponseWriter, r *http.Request) {
+	id, ok := idParam(r)
+	if !ok {
+		writeError(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+	var in struct {
+		TxID int64 `json:"tx_id"`
+	}
+	if err := decode(r, &in); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if in.TxID <= 0 {
+		writeError(w, http.StatusBadRequest, "tx_id is required")
+		return
+	}
+	cb, err := h.svc.RefundStars(r.Context(), id, in.TxID)
+	switch {
+	case errors.Is(err, store.ErrNotFound):
+		writeError(w, http.StatusNotFound, "transaction not found")
+		return
+	case errors.Is(err, store.ErrNotRefundable):
+		writeError(w, http.StatusConflict, "only Telegram Stars top-ups can be refunded")
+		return
+	case errors.Is(err, store.ErrAlreadyRefunded):
+		writeError(w, http.StatusConflict, "this payment has already been refunded")
+		return
+	case errors.Is(err, store.ErrInsufficientFunds):
+		writeError(w, http.StatusConflict, "balance no longer covers this top-up — settle it manually")
+		return
+	case errors.Is(err, billing.ErrNotLinked):
+		writeError(w, http.StatusConflict, "client has no linked Telegram account to refund to")
+		return
+	case errors.Is(err, billing.ErrNoRefunder):
+		writeError(w, http.StatusServiceUnavailable, "Telegram bot is not configured")
+		return
+	case err != nil:
+		writeError(w, http.StatusBadGateway, "Telegram refused the refund")
+		return
+	}
+	adminID, _ := auth.AdminIDFrom(r.Context())
+	recordAudit(r.Context(), h.store, r, adminID, "billing.refund", "client", id,
+		`{"tx_id":`+strconv.FormatInt(in.TxID, 10)+`}`)
+	writeJSON(w, http.StatusOK, cb)
+}
+
 func (h *billingHandler) writeClientBilling(w http.ResponseWriter, r *http.Request, id int64) {
 	cb, err := h.svc.ClientBilling(r.Context(), id, 50)
 	if err != nil {

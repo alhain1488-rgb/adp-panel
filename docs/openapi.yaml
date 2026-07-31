@@ -682,6 +682,47 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
 
+  /api/clients/{id}/billing/refund:
+    parameters:
+      - $ref: '#/components/parameters/IdPath'
+    post:
+      tags: [Billing]
+      summary: Refund a Telegram Stars top-up to the payer
+      description: >
+        Returns the Stars via Telegram and debits the credited rubles from the
+        wallet. Only unrefunded Stars top-ups qualify, and only while the balance
+        still covers the credited amount — otherwise the refund is refused (409)
+        rather than driving the balance negative.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [tx_id]
+              properties:
+                tx_id:
+                  type: integer
+                  format: int64
+                  description: Ledger id of the Stars top-up to refund.
+      responses:
+        '200':
+          description: Client billing
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClientBilling'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Not refundable, already refunded, or balance no longer covers it
+        '502':
+          description: Telegram refused the refund
+
   # ---------------------------------------------------------- Subscription
   /sub/{token}:
     parameters:
@@ -1659,6 +1700,8 @@ components:
         tariff: { type: string }
         detail: { type: string }
         created_at: { type: string, format: date-time }
+        refunded: { type: boolean, description: "this Stars top-up has been returned to the payer" }
+        refundable: { type: boolean, description: "may be refunded right now (balance still covers it)" }
 
     ClientBilling:
       type: object

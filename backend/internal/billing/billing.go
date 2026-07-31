@@ -8,11 +8,22 @@ package billing
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"strconv"
 	"time"
 
 	"github.com/adp/panel/internal/store"
+)
+
+// Refund sentinel errors.
+var (
+	// ErrNoRefunder means no Stars transport is wired in, so a refund cannot be
+	// issued to Telegram (and must therefore not touch the ledger either).
+	ErrNoRefunder = errors.New("billing: Stars refunds unavailable (bot not wired)")
+	// ErrNotLinked means the client has no Telegram chat, so there is no payer
+	// to refund the Stars to.
+	ErrNotLinked = errors.New("billing: client has no linked Telegram account")
 )
 
 // Settings KV keys.
@@ -70,6 +81,11 @@ type Transaction struct {
 	Tariff        string `json:"tariff,omitempty"`
 	Detail        string `json:"detail,omitempty"`
 	CreatedAt     string `json:"created_at"`
+	// Refunded is set once this Stars top-up has been returned to the payer.
+	Refunded bool `json:"refunded,omitempty"`
+	// Refundable reports whether the operator may refund this row right now: a
+	// Stars top-up, not yet refunded, still fully covered by the wallet balance.
+	Refundable bool `json:"refundable,omitempty"`
 }
 
 // ClientBilling is a client's wallet + subscription snapshot.
@@ -86,18 +102,30 @@ type ClientBilling struct {
 // changes. Satisfied by *sync.Service; kept as an interface to avoid the import.
 type Resync interface{ AsyncAll() }
 
+// StarRefunder returns a Telegram Stars payment to the payer. userID is the
+// payer's Telegram id (the private chat id we store on the client). Satisfied by
+// the bot; kept as an interface because backup already imports billing.
+type StarRefunder interface {
+	RefundStarPayment(ctx context.Context, userID, chargeID string) error
+}
+
 // Service is the billing engine.
 type Service struct {
-	store  *store.Store
-	resync Resync
-	logger *slog.Logger
-	now    func() time.Time
+	store    *store.Store
+	resync   Resync
+	refunder StarRefunder
+	logger   *slog.Logger
+	now      func() time.Time
 }
 
 // NewService builds a billing Service. resync may be nil (no auto re-sync).
 func NewService(st *store.Store, resync Resync, logger *slog.Logger) *Service {
 	return &Service{store: st, resync: resync, logger: logger, now: time.Now}
 }
+
+// SetStarRefunder wires the bot in as the Stars refund transport. Without it,
+// refunds fail with ErrNoRefunder instead of silently only moving the ledger.
+func (s *Service) SetStarRefunder(r StarRefunder) { s.refunder = r }
 
 // GetSettings reads the billing configuration, applying defaults for unset keys.
 func (s *Service) GetSettings(ctx context.Context) (Settings, error) {
@@ -237,9 +265,15 @@ func (s *Service) ClientBilling(ctx context.Context, clientID int64, txLimit int
 	}
 	txs := make([]Transaction, 0, len(rows))
 	for _, r := range rows {
+		refunded := r.RefundedAt != ""
+		// Refundable mirrors what store.RefundStarTopup will accept, so the UI can
+		// disable the action instead of offering a button that always fails.
+		refundable := !refunded && r.Kind == "topup" && r.Method == "stars" &&
+			r.ChargeID != "" && r.AmountKopecks > 0 && c.WalletKopecks >= r.AmountKopecks
 		txs = append(txs, Transaction{
 			ID: r.ID, Kind: r.Kind, Method: r.Method, AmountKopecks: r.AmountKopecks,
 			Stars: r.Stars, Tariff: r.Tariff, Detail: r.Detail, CreatedAt: r.CreatedAt,
+			Refunded: refunded, Refundable: refundable,
 		})
 	}
 	return ClientBilling{
@@ -281,6 +315,63 @@ func (s *Service) CreditStars(ctx context.Context, clientID, stars int64, charge
 		return creditedKopecks, 0, err
 	}
 	return creditedKopecks, newBalance, nil
+}
+
+// RefundStars returns a Stars top-up to the payer through Telegram and debits the
+// credited rubles from their wallet.
+//
+// Order matters: everything is validated first, the Telegram refund is issued
+// second, and the ledger moves only once Telegram confirmed. Debiting first would
+// risk taking money from a client whose stars never came back; the residual risk
+// of this order is a refunded payment whose ledger update then fails, which is
+// logged loudly and left for the operator (the top-up stays refundable-looking,
+// but Telegram will reject the second refund).
+//
+// Returns store.ErrInsufficientFunds when the top-up has already been spent —
+// per the operator's rule, such refunds are blocked rather than driving the
+// balance negative.
+func (s *Service) RefundStars(ctx context.Context, clientID, txID int64) (ClientBilling, error) {
+	tx, err := s.store.GetBillingTx(ctx, txID)
+	if err != nil {
+		return ClientBilling{}, err
+	}
+	if tx.ClientID != clientID {
+		return ClientBilling{}, store.ErrNotFound
+	}
+	if tx.Kind != "topup" || tx.Method != "stars" || tx.ChargeID == "" || tx.AmountKopecks <= 0 {
+		return ClientBilling{}, store.ErrNotRefundable
+	}
+	if tx.RefundedAt != "" {
+		return ClientBilling{}, store.ErrAlreadyRefunded
+	}
+	c, err := s.store.GetClient(ctx, clientID)
+	if err != nil {
+		return ClientBilling{}, err
+	}
+	if c.TelegramChatID == "" {
+		return ClientBilling{}, ErrNotLinked
+	}
+	// Pre-check the balance before touching Telegram: a refund we would have to
+	// refuse anyway must not leave the payer's stars already returned.
+	if c.WalletKopecks < tx.AmountKopecks {
+		return ClientBilling{}, store.ErrInsufficientFunds
+	}
+	// Checked last, so a bad request still gets its precise error rather than a
+	// blanket "no transport".
+	if s.refunder == nil {
+		return ClientBilling{}, ErrNoRefunder
+	}
+
+	if err := s.refunder.RefundStarPayment(ctx, c.TelegramChatID, tx.ChargeID); err != nil {
+		return ClientBilling{}, err
+	}
+
+	if _, _, err := s.store.RefundStarTopup(ctx, clientID, txID, "refund of top-up #"+strconv.FormatInt(txID, 10)); err != nil {
+		s.logger.Error("billing: stars refunded on Telegram but ledger update failed — settle by hand",
+			"client", clientID, "tx", txID, "charge", tx.ChargeID, "err", err)
+		return ClientBilling{}, err
+	}
+	return s.ClientBilling(ctx, clientID, 20)
 }
 
 // ManualAdjust applies an operator credit (positive) or debit (negative) to a

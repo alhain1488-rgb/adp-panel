@@ -140,24 +140,75 @@ func (t *Telegram) sendTopupMethods(ctx context.Context, chatID string) {
 			"(Choose a payment method. Telegram Stars is available now; card, SBP and crypto are coming soon.)"), kb)
 }
 
-// sendStarAmounts shows the Star top-up amount buttons with their ruble value.
-func (t *Telegram) sendStarAmounts(ctx context.Context, chatID string) {
+// sendStarAmounts shows the Star top-up buttons: first one per tariff, sized to
+// exactly cover what this client still needs for that plan, then round presets.
+//
+// The tariff-sized buttons exist because raw presets and ruble prices don't line
+// up — at the default rate no preset reaches the yearly tariff at all, so a
+// client picking from presets alone would have to pay twice and overpay.
+func (t *Telegram) sendStarAmounts(ctx context.Context, chatID string, c *store.Client) {
 	cfg, err := t.billing.GetSettings(ctx)
 	if err != nil {
+		_ = t.SendMessageTo(ctx, chatID, withFooter(
+			"Не удалось загрузить тарифы. Попробуйте позже. (Could not load the plans — try again later.)"))
 		return
 	}
-	rows := make([][]inlineButton, 0, len(starTopupPresets))
+	cb, err := t.billing.ClientBilling(ctx, c.ID, 0)
+	if err != nil {
+		_ = t.SendMessageTo(ctx, chatID, withFooter(
+			"Не удалось загрузить баланс. Попробуйте позже. (Could not load your balance — try again later.)"))
+		return
+	}
+	tariffs, err := t.billing.Tariffs(ctx)
+	if err != nil {
+		tariffs = nil
+	}
+
+	rows := make([][]inlineButton, 0, len(tariffs)+len(starTopupPresets))
+	covered := 0
+	for _, tf := range tariffs {
+		need := tf.PriceKopecks - cb.BalanceKopecks
+		if need <= 0 {
+			covered++ // balance already buys this plan — no top-up needed
+			continue
+		}
+		stars := starsFor(need, cfg.StarRateKopecks)
+		if stars <= 0 {
+			continue
+		}
+		rows = append(rows, []inlineButton{{
+			Text:         fmt.Sprintf("🛒 %s — %d ⭐ ≈ %s", tariffTitleRU(tf.Key), stars, formatRubles(stars*cfg.StarRateKopecks)),
+			CallbackData: fmt.Sprintf("pay:stars:%d", stars),
+		}})
+	}
 	for _, n := range starTopupPresets {
 		rows = append(rows, []inlineButton{{
 			Text:         fmt.Sprintf("%d ⭐ ≈ %s", n, formatRubles(n*cfg.StarRateKopecks)),
 			CallbackData: fmt.Sprintf("pay:stars:%d", n),
 		}})
 	}
-	_ = t.sendMessageMarkup(ctx, chatID, withFooter(
-		"<b>⭐ Оплата звёздами Telegram (Pay with Telegram Stars)</b>\n\n"+
-			"Выберите сумму — звёзды зачислятся на баланс в рублях по текущему курсу.\n"+
-			"(Pick an amount; Stars are credited to your ruble balance at the current rate.)"),
-		inlineKeyboardJSON(rows))
+
+	head := "<b>⭐ Оплата звёздами Telegram (Pay with Telegram Stars)</b>\n\n" +
+		"Ваш баланс (Your balance): <b>" + formatRubles(cb.BalanceKopecks) + "</b>\n"
+	switch {
+	case covered == len(tariffs) && len(tariffs) > 0:
+		head += "Баланса уже хватает на любой тариф — можно сразу нажать «" + buyButtonLabel + "».\n" +
+			"(Your balance already covers every plan — just buy one.)"
+	default:
+		head += "Верхние кнопки пополняют ровно на выбранный тариф с учётом баланса; ниже — произвольные суммы.\n" +
+			"(The top buttons top up exactly enough for that plan, given your balance; round amounts below.)"
+	}
+	_ = t.sendMessageMarkup(ctx, chatID, withFooter(head), inlineKeyboardJSON(rows))
+}
+
+// starsFor returns the smallest whole number of Stars whose ruble value covers
+// needKopecks at rateKopecks per Star (rounding up — a short top-up would leave
+// the client unable to buy the plan they picked the button for).
+func starsFor(needKopecks, rateKopecks int64) int64 {
+	if needKopecks <= 0 || rateKopecks <= 0 {
+		return 0
+	}
+	return (needKopecks + rateKopecks - 1) / rateKopecks
 }
 
 // sendStarInvoice sends a Telegram Stars invoice for a top-up of stars Stars.
@@ -252,7 +303,11 @@ func (t *Telegram) handleCallback(ctx context.Context, cq *tgCallbackQuery, deli
 	switch {
 	case data == "pay:stars":
 		t.answerCallback(ctx, cq.ID, "", false)
-		t.sendStarAmounts(ctx, chatID)
+		c, ok := t.linkedClient(ctx, chatID)
+		if !ok {
+			return
+		}
+		t.sendStarAmounts(ctx, chatID, c)
 	case strings.HasPrefix(data, "pay:stars:"):
 		t.answerCallback(ctx, cq.ID, "", false)
 		c, ok := t.linkedClient(ctx, chatID)
@@ -431,6 +486,31 @@ func (t *Telegram) sendInvoiceStars(ctx context.Context, chatID, title, descript
 	})
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
 		fmt.Sprintf("%s/bot%s/sendInvoice", t.apiBase, token), bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	return tgDo(t.client, req)
+}
+
+// RefundStarPayment returns a Stars payment to the payer. userID is the payer's
+// Telegram id — for the private chats this bot works in, that is the chat id we
+// store on the client. Satisfies billing.StarRefunder.
+func (t *Telegram) RefundStarPayment(ctx context.Context, userID, chargeID string) error {
+	uid, err := strconv.ParseInt(strings.TrimSpace(userID), 10, 64)
+	if err != nil {
+		return fmt.Errorf("telegram: bad user id %q: %w", userID, err)
+	}
+	token, err := t.tokenOnly(ctx)
+	if err != nil {
+		return err
+	}
+	body, _ := json.Marshal(map[string]any{
+		"user_id":                    uid,
+		"telegram_payment_charge_id": chargeID,
+	})
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
+		fmt.Sprintf("%s/bot%s/refundStarPayment", t.apiBase, token), bytes.NewReader(body))
 	if err != nil {
 		return err
 	}
