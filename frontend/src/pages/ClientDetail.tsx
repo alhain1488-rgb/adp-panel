@@ -589,8 +589,10 @@ function AccessTab({ client }: { client: Client }) {
 }
 
 // BillingTab shows a client's wallet + subscription and lets the operator top up
-// / adjust the balance and grant subscription time (free of charge). It only
-// renders when payments are enabled in Settings.
+// / adjust the balance and grant subscription time (free of charge). It renders
+// whether or not payments are enabled — with billing off the operator can still
+// see the wallet and set lifetime access, and a banner explains why clients
+// cannot pay yet.
 function BillingTab({ client }: { client: Client }) {
   const t = useT()
   const { lang } = useLang()
@@ -684,6 +686,11 @@ function BillingTab({ client }: { client: Client }) {
             <Skeleton className="h-24" />
           ) : (
             <>
+              {settings && !settings.enabled && (
+                <p className="rounded-lg border border-dashed px-3 py-2 text-xs text-muted-foreground">
+                  {t('clientDetail.billing.disabledHint')}
+                </p>
+              )}
               <div className="flex flex-wrap items-center gap-3">
                 <div className="text-2xl font-semibold tabular-nums">{formatRubles(b?.balance_kopecks ?? 0)}</div>
                 <Badge variant={b?.exempt ? 'success' : status.variant}>
@@ -874,7 +881,6 @@ export default function ClientDetailPage() {
   const toggle = useToggleClient(id)
   const del = useDeleteClient()
   const sendEmail = useSendClientEmail(id)
-  const billingOn = useBillingSettings().data?.enabled ?? false
 
   const [editOpen, setEditOpen] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
@@ -988,7 +994,7 @@ export default function ClientDetailPage() {
             <TabsList>
               <TabsTrigger value="connection">{t('clientDetail.tab.connection')}</TabsTrigger>
               <TabsTrigger value="access">{t('clientDetail.tab.access')}</TabsTrigger>
-              {billingOn && <TabsTrigger value="billing">{t('clientDetail.tab.billing')}</TabsTrigger>}
+              <TabsTrigger value="billing">{t('clientDetail.tab.billing')}</TabsTrigger>
             </TabsList>
             <TabsContent value="connection" className="mt-6">
               <ConnectionTab client={client} />
@@ -996,11 +1002,9 @@ export default function ClientDetailPage() {
             <TabsContent value="access" className="mt-6">
               <AccessTab client={client} />
             </TabsContent>
-            {billingOn && (
-              <TabsContent value="billing" className="mt-6">
-                <BillingTab client={client} />
-              </TabsContent>
-            )}
+            <TabsContent value="billing" className="mt-6">
+              <BillingTab client={client} />
+            </TabsContent>
           </Tabs>
 
           <EditClientDialog client={client} open={editOpen} onOpenChange={setEditOpen} />
